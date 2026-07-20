@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { DecryptedNote } from '@/hooks/use-notes'
-import { formatFullTime, formatRelative, formatTime, initials } from '@/lib/format'
+import { formatFullTime, formatRelative, initials } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 interface NoteListProps {
@@ -188,10 +188,6 @@ function NoteCard({ note, owner, onDelete }: NoteCardProps) {
                             </TooltipContent>
                         </Tooltip>
                     )}
-
-                    <span className="text-muted-foreground ml-auto text-xs">
-                        {formatTime(note.createdAt)}
-                    </span>
                 </div>
             </CardContent>
         </Card>

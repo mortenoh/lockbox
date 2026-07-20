@@ -97,13 +97,13 @@ export function PinPad({
         <div className={cn('grid gap-4', disabled && 'cursor-progress')}>
             {/* Filled dots rather than the digits: shoulder-surfing in a clinic
                 is a real threat, and the count is the only useful feedback. */}
-            <div className="flex justify-center gap-2.5" aria-hidden>
+            <div className="flex justify-center gap-3" aria-hidden>
                 {Array.from({ length: maxLength }, (_, i) => (
                     <span
                         key={i}
                         className={cn(
-                            'size-3 rounded-full border transition-colors',
-                            i < value.length ? 'bg-primary border-primary' : 'border-muted-foreground/40',
+                            'size-3.5 rounded-full border-2 transition-colors',
+                            i < value.length ? 'bg-primary border-primary' : 'border-muted-foreground/50',
                         )}
                     />
                 ))}
@@ -127,11 +127,11 @@ export function PinPad({
                     type="button"
                     variant="ghost"
                     disabled={disabled || value.length === 0}
-                    className="h-14"
+                    className="text-muted-foreground hover:text-foreground h-14"
                     aria-label="Clear"
                     onClick={() => onChange(() => '')}
                 >
-                    clear
+                    Clear
                 </Button>
 
                 <Button
@@ -148,7 +148,7 @@ export function PinPad({
                     type="button"
                     variant="ghost"
                     disabled={disabled || value.length === 0}
-                    className="h-14"
+                    className="text-muted-foreground hover:text-foreground h-14"
                     aria-label="Delete last digit"
                     onClick={() => onChange((previous) => previous.slice(0, -1))}
                 >
@@ -160,7 +160,9 @@ export function PinPad({
                 type="button"
                 disabled={disabled || submitDisabled || value.length < 4}
                 onClick={onSubmit}
-                className="w-full"
+                // Same column as the keypad, so the pad reads as one block
+                // instead of a narrow grid over a full-width bar.
+                className="mx-auto w-full max-w-[15rem]"
             >
                 {disabled ? (
                     <>

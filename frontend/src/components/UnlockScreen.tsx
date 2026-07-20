@@ -483,6 +483,13 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
     const trimmedOwner = owner.trim()
     const isComplete = trimmedOwner.length > 0 && secret.length >= 4
 
+    // The one incomplete state worth shouting about: the PIN is done but the
+    // name is not, so the user thinks they are finished and the hint at the
+    // bottom of the card is easy to miss. Marking the field itself is what
+    // points them at the right place. An untouched form stays unmarked - red
+    // borders before anyone typed anything is scolding, not guidance.
+    const nameMissing = secret.length >= 4 && trimmedOwner.length === 0
+
     async function create() {
         // A ref, not the `busy` state: setBusy only takes effect on the next
         // render, so clicks landing before that would each start their own
@@ -528,6 +535,7 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
                         autoFocus
                         value={owner}
                         placeholder="e.g. Ward 3 Clinic"
+                        aria-invalid={nameMissing || undefined}
                         onChange={(e) => setOwner(e.target.value)}
                     />
                     <p className="text-muted-foreground text-xs">
@@ -558,8 +566,15 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
                     failure. Adding a second box on submit is what made the
                     keypad jump. */}
                 <div className="min-h-[5rem]">
+                    {/* Destructive only when the message itself is urgent. The
+                        variant used to key off isCommonPin alone, which turned
+                        the box red while its text talked about the name. */}
                     <Alert
-                        variant={error || isCommonPin(secret) ? 'destructive' : 'default'}
+                        variant={
+                            error || nameMissing || (isComplete && isCommonPin(secret))
+                                ? 'destructive'
+                                : 'default'
+                        }
                     >
                         <AlertDescription className="text-xs">
                             {error ? (

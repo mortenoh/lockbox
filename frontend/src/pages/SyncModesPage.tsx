@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 import { useCallback, useEffect, useState } from 'react'
-import { RefreshCw, ServerCog } from 'lucide-react'
+import { Check, RefreshCw, ServerCog } from 'lucide-react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -96,23 +96,34 @@ export function SyncModesPage() {
                                 <CardDescription>{option.blurb}</CardDescription>
                             </CardHeader>
                             <CardContent>
-                                <Button
-                                    variant={active ? 'secondary' : 'outline'}
-                                    size="sm"
-                                    disabled={active}
-                                    onClick={() => {
-                                        setMode(option.id)
-                                        toast.info(`Switched to ${option.title.toLowerCase()}`, {
-                                            description:
-                                                option.id === 'plaintext'
-                                                    ? 'Uploads are decrypted first. Syncing now requires an unlocked vault.'
-                                                    : 'Uploads stay encrypted. The server cannot read them, and neither can other users.',
-                                        })
-                                        void refresh()
-                                    }}
-                                >
-                                    {active ? 'Selected' : 'Switch to this mode'}
-                                </Button>
+                                {/* The active card already says so twice (ring,
+                                    badge) - a disabled button that never enables
+                                    only pretended to be a control. The line is
+                                    sized like the sm button opposite, so the two
+                                    cards keep aligned bottoms. */}
+                                {active ? (
+                                    <p className="text-muted-foreground flex h-10 items-center gap-1.5 text-sm md:h-7">
+                                        <Check className="size-4" aria-hidden />
+                                        In use
+                                    </p>
+                                ) : (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                            setMode(option.id)
+                                            toast.info(`Switched to ${option.title.toLowerCase()}`, {
+                                                description:
+                                                    option.id === 'plaintext'
+                                                        ? 'Uploads are decrypted first. Syncing now requires an unlocked vault.'
+                                                        : 'Uploads stay encrypted. The server cannot read them, and neither can other users.',
+                                            })
+                                            void refresh()
+                                        }}
+                                    >
+                                        Switch to this mode
+                                    </Button>
+                                )}
                             </CardContent>
                         </Card>
                     )

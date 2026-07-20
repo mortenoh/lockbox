@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import * as db from '@/lib/db'
 import type { NoteRecord, OutboxEntry } from '@/lib/db'
 import type { VaultRecord } from '@/lib/crypto'
@@ -63,10 +64,24 @@ export function StoragePage() {
                     <RefreshCw className="size-4" />
                     Reload
                 </Button>
+                {/* A bare "storage evictable" told nobody anything. The badge
+                    stays scannable; the tooltip carries the consequence. */}
                 {persisted !== null && (
-                    <Badge variant={persisted ? 'secondary' : 'outline'}>
-                        {persisted ? 'storage persisted' : 'storage evictable'}
-                    </Badge>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Badge
+                                variant={persisted ? 'secondary' : 'outline'}
+                                className="cursor-default"
+                            >
+                                {persisted ? 'storage persisted' : 'storage evictable'}
+                            </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-64">
+                            {persisted
+                                ? 'The browser granted persistent storage: it will not delete this database under disk pressure.'
+                                : 'The browser may delete this database under disk pressure. Unsynced notes would be lost; synced ones stay recoverable from the server.'}
+                        </TooltipContent>
+                    </Tooltip>
                 )}
             </div>
 
