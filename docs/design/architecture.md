@@ -77,8 +77,14 @@ DEK, its salt, the wrap IV and the KDF parameters are persisted. See
 
 ## The app shell and its pages
 
-Navigation is plain component state, not a router — four sibling pages with no deep-linking
-requirement do not justify a routing dependency.
+Navigation uses `HashRouter`, so every page has a URL (`#/security`, `#/kdf`, …). Reloading
+still returns to the unlock screen, because the key cannot survive it — but the app no
+longer also forgets which page you were on.
+
+The hash matters for more than tidiness: routes stay client-side, so the server needs no
+SPA fallback, and the service worker only ever sees `/` for a navigation. The cached shell
+therefore matches any route, and a deep-linked page loads with no network at all. A
+path-based router would need a server fallback that is by definition unreachable offline.
 
 ```mermaid
 flowchart LR

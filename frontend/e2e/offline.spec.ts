@@ -127,3 +127,29 @@ test.describe('offline', () => {
         await context.setOffline(false)
     })
 })
+
+test.describe('offline routing', () => {
+    test.beforeEach(async ({ page, request }) => {
+        await clearServer(request)
+        await page.goto('/')
+        await wipeDevice(page)
+    })
+
+    test('a deep-linked page still loads offline', async ({ page, context }) => {
+        // The payoff of HashRouter: the service worker only ever sees "/" for a
+        // navigation, so the cached shell matches whatever route is in the hash.
+        // A path-based router would need a server-side SPA fallback, which is
+        // unreachable when offline.
+        await createUser(page, 'Ward 3 Clinic', '1234')
+        await page.locator('aside').getByRole('link', { name: /Security/ }).click()
+        await page.evaluate(() => navigator.serviceWorker.ready)
+
+        await context.setOffline(true)
+        await page.reload()
+
+        await expect(page).toHaveURL(/#\/security$/)
+        await expect(page.getByRole('button', { name: 'Unlock', exact: true })).toBeVisible()
+
+        await context.setOffline(false)
+    })
+})

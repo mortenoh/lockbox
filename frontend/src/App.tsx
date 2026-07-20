@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { Route, Routes } from 'react-router-dom'
 
-import { AppLayout, type PageId } from '@/components/AppLayout'
+import { AppLayout } from '@/components/AppLayout'
 import { UnlockScreen } from '@/components/UnlockScreen'
 import { KdfLabPage } from '@/pages/KdfLabPage'
 import { NotesPage } from '@/pages/NotesPage'
@@ -16,18 +17,20 @@ import * as session from '@/lib/session'
 import * as sync from '@/lib/sync'
 
 /**
- * Navigation is plain component state rather than a router.
+ * Routing uses HashRouter, which is worth a word of explanation.
  *
- * Four sibling pages with no deep-linking requirement do not justify a routing
- * dependency, and keeping it out means one less thing between the reader and
- * the parts of this project that are actually interesting.
+ * Reloading destroys the key by design, so the app always returns to the unlock
+ * screen. It should not *also* forget which page you were on - and giving each
+ * page a URL is the fix. A hash route keeps that entirely client-side, so the
+ * server needs no SPA fallback and, more usefully here, the service worker only
+ * ever sees "/" for a navigation. The cached shell therefore matches any route,
+ * and a deep-linked page still loads with no network.
  *
  * The device may have several registered users. Exactly one is active at a time,
  * and everything below is scoped to them: their notes, their queue, their key.
  */
 export default function App() {
     const [vault, setVault] = useState<VaultRecord | null>(null)
-    const [page, setPage] = useState<PageId>('notes')
     const [autoLockMinutes, setAutoLockMinutes] = useState(session.getAutoLockMinutes())
 
     const ownerId = vault?.id ?? null
@@ -130,36 +133,62 @@ export default function App() {
 
     return (
         <AppLayout
-            page={page}
             ownerId={vault.id}
             owner={vault.owner}
-            onNavigate={setPage}
             onLock={handleLock}
             onSwitchUser={handleSwitchUser}
         >
-            {page === 'notes' && (
-                <NotesPage
-                    notes={notes}
-                    owner={vault.owner}
-                    ownerId={vault.id}
-                    queue={queue}
-                    onReload={reload}
-                    onDelete={handleDelete}
-                    onPull={handlePull}
-                    onDiscard={handleDiscard}
+            {/* Routed rather than switched on state, so a reload returns to the
+                page you were on. The vault still has to be unlocked again - the
+                key cannot survive a reload - but it no longer also throws away
+                where you were. */}
+            <Routes>
+                <Route
+                    index
+                    element={
+                        <NotesPage
+                            notes={notes}
+                            owner={vault.owner}
+                            ownerId={vault.id}
+                            queue={queue}
+                            onReload={reload}
+                            onDelete={handleDelete}
+                            onPull={handlePull}
+                            onDiscard={handleDiscard}
+                        />
+                    }
                 />
-            )}
-            {page === 'kdf' && <KdfLabPage />}
-            {page === 'sync-modes' && <SyncModesPage />}
-            {page === 'storage' && <StoragePage />}
-            {page === 'security' && (
-                <SecurityPage
-                    vault={vault}
-                    onVaultChanged={setVault}
-                    autoLockMinutes={autoLockMinutes}
-                    onAutoLockChanged={setAutoLockMinutes}
+                <Route path="kdf" element={<KdfLabPage />} />
+                <Route path="sync-modes" element={<SyncModesPage />} />
+                <Route path="storage" element={<StoragePage />} />
+                <Route
+                    path="security"
+                    element={
+                        <SecurityPage
+                            vault={vault}
+                            onVaultChanged={setVault}
+                            autoLockMinutes={autoLockMinutes}
+                            onAutoLockChanged={setAutoLockMinutes}
+                        />
+                    }
                 />
-            )}
+                {/* Unknown hash routes fall back to the demo rather than a blank page. */}
+                <Route
+                    path="*"
+                    element={
+                        <NotesPage
+                            notes={notes}
+                            owner={vault.owner}
+                            ownerId={vault.id}
+                            queue={queue}
+                            onReload={reload}
+                            onDelete={handleDelete}
+                            onPull={handlePull}
+                            onDiscard={handleDiscard}
+                        />
+                    }
+                />
+            </Routes>
         </AppLayout>
     )
 }

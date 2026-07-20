@@ -51,9 +51,9 @@ export async function addNote(page: Page, title: string, body = ''): Promise<voi
     await expect(page.getByText(title, { exact: true })).toBeVisible()
 }
 
-/** Navigate via the sidebar. */
+/** Navigate via the sidebar. Nav items are links now, not buttons. */
 export async function goToPage(page: Page, label: string): Promise<void> {
-    await page.locator('aside').getByRole('button', { name: new RegExp(label) }).click()
+    await page.locator('aside').getByRole('link', { name: new RegExp(label) }).click()
 }
 
 /** Everything currently in IndexedDB, read without decrypting. */

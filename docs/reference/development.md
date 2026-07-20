@@ -59,8 +59,8 @@ so `build-frontend` is only needed after changing something under `frontend/src`
 
 ## The four pages
 
-The app is a sidebar shell with four sibling pages. Navigation is plain component state in
-`App.tsx` — no router, because four pages with no deep-linking requirement do not justify
+The app is a sidebar shell with five pages, routed with `HashRouter` so each has its own
+URL and a reload returns to it.
 the dependency.
 
 | Page | Source | What to use it for while developing |

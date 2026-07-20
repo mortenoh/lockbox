@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ChevronDown, KeyRound, Lock, RefreshCw, ShieldCheck, WifiOff } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -18,7 +19,8 @@ import { cn } from '@/lib/utils'
  * is "what has not reached the server yet, and would I lose it". The dot answers
  * the first at a glance, the panel answers the second on demand.
  */
-export function StatusMenu({ ownerId, onOpenSecurity }: { ownerId: string; onOpenSecurity: () => void }) {
+export function StatusMenu({ ownerId }: { ownerId: string }) {
+    const navigate = useNavigate()
     const { online, syncing, pending, failed, lastSyncAt, mode, blockedByLock, unauthorized } =
         useSync()
     const [open, setOpen] = useState(false)
@@ -132,7 +134,7 @@ export function StatusMenu({ ownerId, onOpenSecurity }: { ownerId: string; onOpe
                             className="w-full"
                             onClick={() => {
                                 setOpen(false)
-                                onOpenSecurity()
+                                void navigate('/security')
                             }}
                         >
                             <KeyRound className="size-4" />

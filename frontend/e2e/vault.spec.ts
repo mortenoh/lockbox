@@ -177,9 +177,54 @@ test.describe('security page', () => {
         // would be requesting a secret that has no use - and implying an
         // authentication step that does not exist.
         await createUser(page, 'Ward 3 Clinic', '1234')
-        await page.locator('aside').getByRole('button', { name: /Security/ }).click()
+        await page.locator('aside').getByRole('link', { name: /Security/ }).click()
 
         await expect(page.getByText('nothing to configure')).toBeVisible()
         await expect(page.locator('#api-token')).toBeHidden()
+    })
+})
+
+test.describe('routing', () => {
+    test.beforeEach(async ({ page, request }) => {
+        await clearServer(request)
+        await page.goto('/')
+        await wipeDevice(page)
+    })
+
+    test('each page has its own URL', async ({ page }) => {
+        await createUser(page, 'Ward 3 Clinic', '1234')
+
+        await page.locator('aside').getByRole('link', { name: /Security/ }).click()
+        await expect(page).toHaveURL(/#\/security$/)
+
+        await page.locator('aside').getByRole('link', { name: /KDF Lab/ }).click()
+        await expect(page).toHaveURL(/#\/kdf$/)
+    })
+
+    test('a reload returns to the same page, not the start', async ({ page }) => {
+        // The vault still has to be unlocked again - the key cannot survive a
+        // reload - but the app should not also forget where you were.
+        await createUser(page, 'Ward 3 Clinic', '1234')
+        await page.locator('aside').getByRole('link', { name: /Security/ }).click()
+        await expect(page).toHaveURL(/#\/security$/)
+
+        await page.reload()
+
+        await expect(page).toHaveURL(/#\/security$/)
+        await enterPin(page, '1234')
+        await page.getByRole('button', { name: 'Unlock', exact: true }).click()
+
+        // Scoped to the content area: the sidebar link matches too.
+        await expect(page.locator('main').getByRole('heading', { name: 'Security' })).toBeVisible()
+    })
+
+    test('browser back navigates between pages', async ({ page }) => {
+        await createUser(page, 'Ward 3 Clinic', '1234')
+        await page.locator('aside').getByRole('link', { name: /KDF Lab/ }).click()
+        await page.locator('aside').getByRole('link', { name: /At Rest/ }).click()
+        await expect(page).toHaveURL(/#\/storage$/)
+
+        await page.goBack()
+        await expect(page).toHaveURL(/#\/kdf$/)
     })
 })

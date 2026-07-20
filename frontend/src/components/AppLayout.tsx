@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
 import {
     Database,
     FlaskConical,
@@ -22,11 +23,9 @@ import { useSidebar } from '@/hooks/use-sidebar'
 import { useSync } from '@/hooks/use-sync'
 import { cn } from '@/lib/utils'
 
-/** The demo pages reachable from the sidebar. */
-export type PageId = 'notes' | 'kdf' | 'sync-modes' | 'storage' | 'security'
-
 interface NavItem {
-    id: PageId
+    /** Route path. '' is the index route. */
+    path: string
     label: string
     hint: string
     icon: typeof NotebookPen
@@ -36,21 +35,19 @@ interface NavItem {
  * Each page isolates one idea, so a variation can be explored without the
  * others getting in the way.
  */
-const NAV_ITEMS: NavItem[] = [
-    { id: 'notes', label: 'Notes', hint: 'The working demo', icon: NotebookPen },
-    { id: 'kdf', label: 'KDF Lab', hint: 'Argon2id vs PBKDF2', icon: FlaskConical },
-    { id: 'sync-modes', label: 'Sync Modes', hint: 'Plaintext vs encrypted', icon: RefreshCw },
-    { id: 'storage', label: 'At Rest', hint: 'What IndexedDB holds', icon: Database },
-    { id: 'security', label: 'Security', hint: 'Biometrics, auto-lock', icon: ShieldCheck },
+export const NAV_ITEMS: NavItem[] = [
+    { path: '', label: 'Notes', hint: 'The working demo', icon: NotebookPen },
+    { path: 'kdf', label: 'KDF Lab', hint: 'Argon2id vs PBKDF2', icon: FlaskConical },
+    { path: 'sync-modes', label: 'Sync Modes', hint: 'Plaintext vs encrypted', icon: RefreshCw },
+    { path: 'storage', label: 'At Rest', hint: 'What IndexedDB holds', icon: Database },
+    { path: 'security', label: 'Security', hint: 'Biometrics, auto-lock', icon: ShieldCheck },
 ]
 
 interface AppLayoutProps {
-    page: PageId
     /** Active user, so status counts are scoped to them. */
     ownerId: string
     /** Display name, shown so it is obvious who is signed in. */
     owner: string
-    onNavigate: (page: PageId) => void
     /** Drop the key, keep the user selected. */
     onLock: () => void
     /** Drop the key and forget the user, returning to the picker. */
@@ -60,17 +57,17 @@ interface AppLayoutProps {
 
 /** Sidebar shell: collapsible navigation, status header, page content. */
 export function AppLayout({
-    page,
     ownerId,
     owner,
-    onNavigate,
     onLock,
     onSwitchUser,
     children,
 }: AppLayoutProps) {
     const { collapsed, toggle } = useSidebar()
     const { failed } = useSync()
-    const title = NAV_ITEMS.find((item) => item.id === page)?.label ?? 'Lockbox'
+    const { pathname } = useLocation()
+    const current = pathname.replace(/^\//, '')
+    const title = NAV_ITEMS.find((item) => item.path === current)?.label ?? 'Lockbox'
 
     return (
         <div className="flex min-h-svh">
@@ -95,49 +92,53 @@ export function AppLayout({
                 <nav className="flex flex-col gap-1 px-2 py-2">
                     {NAV_ITEMS.map((item) => {
                         const Icon = item.icon
-                        const active = item.id === page
 
-                        const button = (
-                            <button
-                                type="button"
-                                onClick={() => onNavigate(item.id)}
-                                aria-current={active ? 'page' : undefined}
+                        const link = (
+                            <NavLink
+                                to={item.path === '' ? '/' : `/${item.path}`}
+                                end={item.path === ''}
                                 aria-label={item.label}
-                                className={cn(
-                                    'relative flex items-start gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                                    collapsed && 'justify-center px-0 py-2.5',
-                                    active
-                                        ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                                        : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
-                                )}
+                                className={({ isActive }) =>
+                                    cn(
+                                        'relative flex items-start gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                                        collapsed && 'justify-center px-0 py-2.5',
+                                        isActive
+                                            ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                                            : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
+                                    )
+                                }
                             >
-                                {/* Active marker stays legible when labels are hidden. */}
-                                {active && (
-                                    <span className="bg-primary absolute inset-y-1.5 left-0 w-0.5 rounded-full" />
+                                {({ isActive }) => (
+                                    <>
+                                        {/* Active marker stays legible when labels are hidden. */}
+                                        {isActive && (
+                                            <span className="bg-primary absolute inset-y-1.5 left-0 w-0.5 rounded-full" />
+                                        )}
+                                        <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
+                                        {!collapsed && (
+                                            <span className="grid">
+                                                <span>{item.label}</span>
+                                                <span className="text-muted-foreground text-xs">
+                                                    {item.hint}
+                                                </span>
+                                            </span>
+                                        )}
+                                    </>
                                 )}
-                                <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
-                                {!collapsed && (
-                                    <span className="grid">
-                                        <span>{item.label}</span>
-                                        <span className="text-muted-foreground text-xs">
-                                            {item.hint}
-                                        </span>
-                                    </span>
-                                )}
-                            </button>
+                            </NavLink>
                         )
 
                         // Collapsed to icons, the label has to come back somehow.
                         return collapsed ? (
-                            <Tooltip key={item.id}>
-                                <TooltipTrigger asChild>{button}</TooltipTrigger>
+                            <Tooltip key={item.path}>
+                                <TooltipTrigger asChild>{link}</TooltipTrigger>
                                 <TooltipContent side="right">
                                     <span className="font-medium">{item.label}</span>
                                     <span className="opacity-70"> — {item.hint}</span>
                                 </TooltipContent>
                             </Tooltip>
                         ) : (
-                            <div key={item.id}>{button}</div>
+                            <div key={item.path}>{link}</div>
                         )
                     })}
                 </nav>
@@ -187,7 +188,7 @@ export function AppLayout({
 
                         {failed > 0 && <Badge variant="destructive">{failed} failed</Badge>}
 
-                        <StatusMenu ownerId={ownerId} onOpenSecurity={() => onNavigate('security')} />
+                        <StatusMenu ownerId={ownerId} />
                         <ThemeToggle />
 
                         <Tooltip>
@@ -221,12 +222,14 @@ export function AppLayout({
                     <nav className="flex gap-1 overflow-x-auto border-t px-4 py-2 md:hidden">
                         {NAV_ITEMS.map((item) => (
                             <Button
-                                key={item.id}
-                                variant={item.id === page ? 'secondary' : 'ghost'}
+                                key={item.path}
+                                asChild
+                                variant={item.path === current ? 'secondary' : 'ghost'}
                                 size="sm"
-                                onClick={() => onNavigate(item.id)}
                             >
-                                {item.label}
+                                <NavLink to={item.path === '' ? '/' : `/${item.path}`}>
+                                    {item.label}
+                                </NavLink>
                             </Button>
                         ))}
                     </nav>
