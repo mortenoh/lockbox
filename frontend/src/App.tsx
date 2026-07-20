@@ -100,12 +100,18 @@ export default function App() {
     )
 
     const handlePull = useCallback(async () => {
-        const changed = await sync.pull()
+        // Drain first so unsent local work is not clobbered by a remote LWW win.
+        const before = sync.getState().lastPullAt
+        await sync.runSyncCycle({ forceDrain: true, minPullIntervalMs: 0 })
         await reload()
 
+        const after = sync.getState().lastPullAt
+        const changed = after !== null && after !== before
+
         // Silence was how the broken pull went unnoticed - always say what happened.
-        if (changed > 0) {
-            toast.success(`Pulled ${changed} note${changed === 1 ? '' : 's'}`, {
+        // lastPullAt only advances when pull actually wrote something.
+        if (changed) {
+            toast.success('Pulled remote changes', {
                 description:
                     sync.getState().mode === 'plaintext'
                         ? 'Re-encrypted with this user’s key before storing.'

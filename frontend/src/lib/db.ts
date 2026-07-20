@@ -436,6 +436,27 @@ export async function dequeue(seq: number): Promise<void> {
 }
 
 /**
+ * Drop every outbox entry for one note owned by one user.
+ *
+ * Used when a pull applies a remote change that supersedes local unsent work
+ * (for example a newer remote tombstone winning over a pending put). Queue
+ * sizes stay small in this demo, so a scan by ownerId is enough - no noteId
+ * index yet.
+ */
+export async function dequeueForNote(ownerId: string, noteId: string): Promise<void> {
+    await withStore(STORE_OUTBOX, 'readwrite', async (store) => {
+        const entries = await promisify<OutboxEntry[]>(
+            store.index('ownerId').getAll(IDBKeyRange.only(ownerId)),
+        )
+        for (const entry of entries) {
+            if (entry.noteId === noteId) {
+                await promisify(store.delete(entry.seq))
+            }
+        }
+    })
+}
+
+/**
  * Record a failed attempt.
  *
  * `permanent` distinguishes a 4xx (the server will never accept this, so park
