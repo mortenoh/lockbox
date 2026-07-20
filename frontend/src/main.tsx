@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Morten Hansen
+// SPDX-License-Identifier: BSD-3-Clause
+
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ThemeProvider } from 'next-themes'

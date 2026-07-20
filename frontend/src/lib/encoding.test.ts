@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Morten Hansen
+// SPDX-License-Identifier: BSD-3-Clause
+
 import { describe, expect, it } from 'vitest'
 
 import { fromBase64, toBase64 } from '@/lib/encoding'

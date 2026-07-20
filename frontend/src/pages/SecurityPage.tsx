@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Morten Hansen
+// SPDX-License-Identifier: BSD-3-Clause
+
 import { useEffect, useState } from 'react'
 import { Fingerprint, Loader2, ShieldCheck, Timer, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'

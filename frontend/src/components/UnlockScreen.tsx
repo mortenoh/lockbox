@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Morten Hansen
+// SPDX-License-Identifier: BSD-3-Clause
+
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Fingerprint, KeyRound, Loader2, Plus, ShieldCheck, Trash2, UserRound } from 'lucide-react'
 

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Morten Hansen
+// SPDX-License-Identifier: BSD-3-Clause
+
 import { CloudDownload, CloudOff, Download, Pencil, ShieldAlert, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'

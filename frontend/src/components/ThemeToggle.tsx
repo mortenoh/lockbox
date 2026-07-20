@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Morten Hansen
+// SPDX-License-Identifier: BSD-3-Clause
+
 import { Moon, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
 

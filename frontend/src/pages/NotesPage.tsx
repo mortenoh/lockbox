@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Morten Hansen
+// SPDX-License-Identifier: BSD-3-Clause
+
 import { NoteComposer } from '@/components/NoteComposer'
 import { NoteList } from '@/components/NoteList'
 import { SyncQueue } from '@/components/SyncQueue'

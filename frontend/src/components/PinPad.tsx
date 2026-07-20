@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Morten Hansen
+// SPDX-License-Identifier: BSD-3-Clause
+
 import { Delete, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
