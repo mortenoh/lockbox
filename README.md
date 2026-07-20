@@ -147,8 +147,9 @@ tests/             pytest suite (backend)
 make docs         # http://127.0.0.1:8001
 ```
 
-Includes a [beginner's guide to the Web Crypto API](docs/guide/web-crypto.md) that builds
-from `getRandomValues` up to the envelope scheme used here, plus
+Includes beginner's guides to the [Web Crypto API](docs/guide/web-crypto.md) and
+[WebAuthn and passkeys](docs/guide/webauthn.md), each building from first principles up to
+the scheme used here, plus
 [architecture](docs/design/architecture.md),
 [encryption design](docs/design/encryption.md),
 [offline sync](docs/design/offline-sync.md),
@@ -161,9 +162,8 @@ SQLCipher, Workbox, Replicache/Zero), and a [roadmap](docs/context/roadmap.md).
 
 Listed because a project about honest trade-offs should be honest about itself.
 
-- **No frontend tests.** All coverage is backend. The crypto, IndexedDB, multi-user
-  isolation, outbox and service-worker layers have none — and that is where every bug found
-  so far has lived. Top of the roadmap.
+- **PRF/biometric paths are untested in CI.** Chrome's virtual authenticator does not
+  implement the PRF extension, so biometric enrolment is verified on real hardware only.
 - **KDF parameters are probably too low** for fast hardware. The KDF Lab measured Argon2id
   at ~130 ms on an Apple Silicon laptop, below the 250–500 ms target. Benchmark on the
   weakest device you must support.
@@ -178,9 +178,15 @@ Listed because a project about honest trade-offs should be honest about itself.
 
 ```bash
 make lint          # ruff + mypy + pyright
-make test          # pytest
+make test          # backend tests (32)
+make test-e2e      # browser end-to-end tests (24, Playwright)
 make lint-frontend # oxlint
 ```
+
+End-to-end tests run against a real browser rather than jsdom + a fake IndexedDB: Web
+Crypto, IndexedDB key paths, service worker caching and offline transitions are browser
+machinery that shims reproduce only approximately — and every bug found during development
+lived in exactly that layer. Playwright starts its own server on a throwaway data file.
 
 ## Licence
 

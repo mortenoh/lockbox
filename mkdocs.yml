@@ -30,6 +30,7 @@ nav:
   - Home: index.md
   - Guide:
       - Web Crypto API: guide/web-crypto.md
+      - WebAuthn and Passkeys: guide/webauthn.md
   - Design:
       - Architecture: design/architecture.md
       - Encryption: design/encryption.md

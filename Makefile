@@ -1,4 +1,4 @@
-.PHONY: help install lint test coverage serve build-frontend lint-frontend docs docs-serve docs-build clean
+.PHONY: help install lint test test-e2e coverage serve build-frontend lint-frontend docs docs-serve docs-build clean
 
 # ==============================================================================
 # Venv
@@ -18,7 +18,8 @@ help:
 	@echo "Targets:"
 	@echo "  install      Install dependencies"
 	@echo "  lint         Run formatter, linter and type checkers"
-	@echo "  test         Run tests"
+	@echo "  test         Run backend tests"
+	@echo "  test-e2e     Run browser end-to-end tests (Playwright)"
 	@echo "  coverage     Run tests with coverage reporting"
 	@echo "  serve        Run the dev server on http://127.0.0.1:8000"
 	@echo "  build-frontend  Build the React app into src/lockbox/static"
@@ -43,6 +44,11 @@ lint:
 test:
 	@echo ">>> Running tests"
 	@$(UV) run pytest -q
+
+# Starts its own server on a throwaway data file, so it never touches ./data.
+test-e2e:
+	@echo ">>> Running end-to-end tests"
+	@cd frontend && pnpm exec playwright test
 
 coverage:
 	@echo ">>> Running tests with coverage"
