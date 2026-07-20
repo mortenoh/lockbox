@@ -48,7 +48,10 @@
 
 import { argon2id } from 'hash-wasm'
 
+import { fromBase64, toBase64 } from '@/lib/encoding'
 import type { PrfEnvelope } from '@/lib/webauthn'
+
+export { fromBase64, toBase64 }
 
 // ============================================================================
 // Key derivation parameters
@@ -167,14 +170,6 @@ export interface EncryptedPayload {
     ciphertext: string
 }
 
-/** The decrypted contents of a note. */
-export interface NoteContent {
-    title: string
-    body: string
-    /** Display name of whoever wrote it. Travels inside the ciphertext locally. */
-    author: string
-}
-
 /**
  * The unwrapped DEK.
  *
@@ -190,22 +185,6 @@ let sessionKey: CryptoKey | null = null
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
-
-/** Encode bytes as base64url: JSON- and URL-safe, unpadded. */
-export function toBase64(bytes: ArrayBuffer | Uint8Array): string {
-    const view = new Uint8Array(bytes)
-    let binary = ''
-    for (let i = 0; i < view.length; i += 1) binary += String.fromCharCode(view[i])
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-/** Decode base64url back into bytes. */
-export function fromBase64(text: string): Uint8Array {
-    const binary = atob(text.replace(/-/g, '+').replace(/_/g, '/'))
-    const bytes = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
-    return bytes
-}
 
 /** Cryptographically secure random bytes. Never use Math.random here. */
 function randomBytes(length: number): Uint8Array {

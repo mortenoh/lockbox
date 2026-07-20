@@ -53,6 +53,14 @@ export interface NoteRecord {
 /** The payload uploaded to the server (a NoteRecord minus local-only fields). */
 export type NotePayload = Omit<NoteRecord, 'synced' | 'origin' | 'ownerId'>
 
+/** The decrypted contents of a note - what a NoteRecord's ciphertext holds. */
+export interface NoteContent {
+    title: string
+    body: string
+    /** Display name of whoever wrote it. Travels inside the ciphertext locally. */
+    author: string
+}
+
 export type OutboxOp = 'put' | 'delete'
 export type OutboxStatus = 'pending' | 'failed'
 

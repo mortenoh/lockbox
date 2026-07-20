@@ -44,6 +44,8 @@
  *     Touch ID --PRF--> KEK(prf)   --unwrap--> DEK
  */
 
+import { fromBase64, toBase64 } from '@/lib/encoding'
+
 const PRF_SALT_BYTES = 32
 const RP_NAME = 'Lockbox'
 
@@ -59,20 +61,6 @@ export interface PrfEnvelope {
     wrappedDek: string
     /** Label for the UI, e.g. "Touch ID". */
     label: string
-}
-
-function toBase64(bytes: ArrayBuffer | Uint8Array): string {
-    const view = new Uint8Array(bytes)
-    let binary = ''
-    for (let i = 0; i < view.length; i += 1) binary += String.fromCharCode(view[i])
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-function fromBase64(text: string): Uint8Array {
-    const binary = atob(text.replace(/-/g, '+').replace(/_/g, '/'))
-    const bytes = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
-    return bytes
 }
 
 /**

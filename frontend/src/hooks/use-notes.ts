@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { decryptJson, type NoteContent } from '@/lib/crypto'
+import { decryptJson } from '@/lib/crypto'
 import * as db from '@/lib/db'
-import type { NoteRecord, OutboxEntry } from '@/lib/db'
+import type { NoteContent, NoteRecord, OutboxEntry } from '@/lib/db'
 
 /** A stored note paired with its decrypted contents (null if undecryptable). */
 export interface DecryptedNote extends NoteRecord {
