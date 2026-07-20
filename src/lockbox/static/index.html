@@ -12,10 +12,58 @@
         <link rel="icon" type="image/svg+xml" href="/icon.svg" />
         <link rel="apple-touch-icon" href="/icon.svg" />
         <link rel="manifest" href="/manifest.webmanifest" />
-      <script type="module" crossorigin src="/assets/index-CiuhdunU.js"></script>
+      <script type="module" crossorigin src="/assets/index-C9qesEGi.js"></script>
       <link rel="stylesheet" crossorigin href="/assets/index-CqVXClTX.css">
     </head>
     <body>
         <div id="root"></div>
+
+        <!--
+          Last-resort recovery for a blank page.
+
+          This is inline and in the HTML deliberately: navigations are
+          network-first, so this markup is fresh even when the app bundle is
+          not. That matters because the failure it recovers from is precisely
+          "the bundle never ran" - a stale service worker serving a shell whose
+          content-hashed assets were renamed by a rebuild. Recovery code inside
+          the bundle cannot fix a bundle that failed to load.
+
+          It only acts when the app has demonstrably not mounted, and only once
+          per tab, so it cannot become a reload loop.
+        -->
+        <script>
+            setTimeout(function () {
+                var root = document.getElementById('root')
+                if (!root || root.childElementCount > 0) return
+                if (sessionStorage.getItem('lockbox.recovered')) return
+                if (!('serviceWorker' in navigator)) return
+
+                sessionStorage.setItem('lockbox.recovered', '1')
+                console.warn('[lockbox] app did not mount - clearing caches and reloading')
+
+                navigator.serviceWorker
+                    .getRegistrations()
+                    .then(function (regs) {
+                        return Promise.all(
+                            regs.map(function (r) {
+                                return r.unregister()
+                            }),
+                        )
+                    })
+                    .then(function () {
+                        return caches.keys()
+                    })
+                    .then(function (keys) {
+                        return Promise.all(
+                            keys.map(function (k) {
+                                return caches.delete(k)
+                            }),
+                        )
+                    })
+                    .then(function () {
+                        location.reload()
+                    })
+            }, 5000)
+        </script>
     </body>
 </html>

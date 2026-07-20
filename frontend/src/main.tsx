@@ -36,6 +36,14 @@ if ('serviceWorker' in navigator) {
     const hadController = Boolean(navigator.serviceWorker.controller)
     let reloading = false
 
+    // The worker asks for this when it finds a hashed asset missing, which
+    // means this document is running a shell a rebuild has superseded.
+    navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data !== 'RELOAD_STALE_SHELL' || reloading) return
+        reloading = true
+        window.location.reload()
+    })
+
     navigator.serviceWorker.addEventListener('controllerchange', () => {
         // The new worker has taken over, but this document is still running the
         // JavaScript the old one served. One reload lines them up.

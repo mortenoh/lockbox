@@ -164,6 +164,10 @@ SQLCipher, Workbox, Replicache/Zero), and a [roadmap](docs/context/roadmap.md).
 
 Listed because a project about honest trade-offs should be honest about itself.
 
+- **Existing clients cannot be rescued remotely.** Recovery from a bricked state ships
+  inside the app, so a browser stuck on a build that predates it needs one manual clear.
+  Worth designing the recovery path into the *first* release, since it is the only one that
+  can never be fixed after the fact.
 - **PRF/biometric paths are untested in CI.** Chrome's virtual authenticator does not
   implement the PRF extension, so biometric enrolment is verified on real hardware only.
 - **KDF parameters are tuned to one machine.** Argon2id runs at 128 MiB / 3 passes, measured

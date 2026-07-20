@@ -324,3 +324,38 @@ trigger a pointless reload — only a genuine handover does.
 The alternative, keeping the wait and prompting the user to reload, is a
 defensible design and what Workbox recommends. It is simply not what this
 project had: it had the wait without the prompt, which is the worst of both.
+
+## A PWA must never need DevTools to recover
+
+The blank page above had an ugly property: the only cure was opening DevTools
+and unregistering the worker by hand. That is not a support instruction. A
+health worker on a tablet cannot follow it, and no operations team should have
+to send it. **A PWA that can brick itself into requiring developer tools is not
+shippable**, however good the rest of it is.
+
+So recovery has to be automatic, and it is layered — each layer catches what the
+one above it cannot see:
+
+| Layer | Catches | Why it can act |
+| --- | --- | --- |
+| `skipWaiting()` on install | An update queued behind the old worker | Prevents the state existing |
+| Worker sees a `/assets/*` 404 | A shell whose assets a rebuild renamed | It intercepts the failing request itself |
+| Inline script in `index.html` | Anything else that stops the app mounting | It is inline, so it runs even when the bundle does not |
+
+The third is the important one, and its placement is the whole trick. Recovery
+code inside the bundle cannot repair a bundle that failed to load. The fallback
+therefore lives inline in the HTML — which navigations fetch network-first, so
+it is fresh even when everything cached is stale.
+
+Both are guarded against looping: the worker heals once per lifetime, and the
+inline script marks `sessionStorage` before reloading.
+
+!!! warning "Existing clients cannot be rescued retroactively"
+    Every layer above ships *inside* the app. A browser already stuck on a
+    pre-fix build has none of them, and no server-side change reaches it,
+    because the code that would act is the code it is failing to run. Those
+    clients need a manual clear once.
+
+    That asymmetry is worth designing for before shipping, not after: the first
+    release must already contain the recovery path, because it is the only one
+    that can never be repaired remotely.

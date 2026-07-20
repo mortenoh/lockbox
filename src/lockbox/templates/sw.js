@@ -103,6 +103,17 @@ self.addEventListener("fetch", (event) => {
 
             try {
                 const response = await fetch(request);
+
+                // A missing hashed asset means this client is running a shell
+                // that a rebuild has superseded - the exact state that renders a
+                // blank page. Self-heal rather than serve the 404: there is no
+                // action a user could reasonably take here, and telling one to
+                // open DevTools is not a support answer.
+                if (response.status === 404 && url.pathname.startsWith("/assets/")) {
+                    await recoverFromStaleShell();
+                    return response;
+                }
+
                 if (response.ok) {
                     const cache = await caches.open(CACHE_VERSION);
                     cache.put(request, response.clone());
@@ -114,3 +125,22 @@ self.addEventListener("fetch", (event) => {
         })(),
     );
 });
+
+/**
+ * Drop every cache and ask open pages to reload.
+ *
+ * Deliberately does not unregister this worker: a fresh one is already the
+ * active version by the time a stale shell can ask for a missing asset, so the
+ * caches are the stale part, not the worker.
+ */
+let recovering = false;
+async function recoverFromStaleShell() {
+    if (recovering) return;
+    recovering = true;
+
+    const names = await caches.keys();
+    await Promise.all(names.map((n) => caches.delete(n)));
+
+    const clients = await self.clients.matchAll({ type: "window" });
+    for (const client of clients) client.postMessage("RELOAD_STALE_SHELL");
+}
