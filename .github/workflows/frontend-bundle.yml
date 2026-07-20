@@ -1,0 +1,59 @@
+# The built frontend is committed into src/lockbox/static and served from
+# there (see Makefile: build-frontend). Editing frontend/src without running
+# `make build-frontend` therefore ships as a silent no-op: the source changes,
+# the deployed app does not. The Vite build is byte-deterministic, so a fresh
+# build in CI must produce exactly the committed bundle.
+name: frontend-bundle
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'src/lockbox/static/**'
+      - '.github/workflows/frontend-bundle.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - 'src/lockbox/static/**'
+      - '.github/workflows/frontend-bundle.yml'
+
+jobs:
+  bundle-fresh:
+    name: committed bundle matches frontend/src
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Rebuild bundle
+        working-directory: frontend
+        run: pnpm build
+
+      - name: Committed bundle must match the rebuild
+        run: |
+          if ! git diff --exit-code -- src/lockbox/static; then
+            echo
+            echo "::error::src/lockbox/static is stale. Run 'make build-frontend' and commit the result."
+            exit 1
+          fi
+          # Catch brand-new hashed assets too - git diff ignores untracked files.
+          untracked=$(git ls-files --others --exclude-standard -- src/lockbox/static)
+          if [ -n "$untracked" ]; then
+            echo "$untracked"
+            echo "::error::Rebuild produced files missing from src/lockbox/static. Run 'make build-frontend' and commit the result."
+            exit 1
+          fi
