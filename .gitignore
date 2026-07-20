@@ -1,0 +1,39 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.coverage
+coverage.xml
+htmlcov/
+
+# Runtime data (encrypted blobs written by the demo server)
+data/
+*.db
+
+# Built documentation
+site/
+
+# Frontend
+node_modules/
+.playwright-mcp/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store

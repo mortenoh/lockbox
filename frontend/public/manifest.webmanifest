@@ -1,0 +1,18 @@
+{
+    "name": "Lockbox - Encrypted Offline Notes",
+    "short_name": "Lockbox",
+    "description": "Offline-first notes encrypted client-side before they ever leave the device.",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#12141c",
+    "theme_color": "#12141c",
+    "icons": [
+        {
+            "src": "/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        }
+    ]
+}

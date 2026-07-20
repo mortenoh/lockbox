@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Lockbox">
+    <rect width="512" height="512" rx="96" fill="#12141c"/>
+    <path d="M256 112c-46 0-83 37-83 83v45h44v-45c0-21 18-39 39-39s39 18 39 39v45h44v-45c0-46-37-83-83-83z" fill="#6ee7b7"/>
+    <rect x="146" y="240" width="220" height="160" rx="24" fill="#6ee7b7"/>
+    <circle cx="256" cy="304" r="22" fill="#12141c"/>
+    <rect x="246" y="316" width="20" height="46" rx="10" fill="#12141c"/>
+</svg>
