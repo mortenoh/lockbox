@@ -38,12 +38,23 @@ type Screen = 'pick' | 'unlock' | 'create'
  */
 export function UnlockScreen({ initialUserId, onUnlocked }: UnlockScreenProps) {
     const [vaults, setVaults] = useState<VaultRecord[] | null>(null)
+    const [storageError, setStorageError] = useState<string | null>(null)
     const [screen, setScreen] = useState<Screen>('pick')
     const [selected, setSelected] = useState<VaultRecord | null>(null)
     const [biometricAvailable, setBiometricAvailable] = useState(false)
 
     const refresh = useCallback(async () => {
-        const list = await db.listVaults()
+        let list: VaultRecord[]
+        try {
+            list = await db.listVaults()
+        } catch (err) {
+            // Never leave the screen blank. Opening the database can fail - most
+            // often because another tab holds it open on an older version - and
+            // rendering nothing gives the user neither an explanation nor a way
+            // out.
+            setStorageError(err instanceof Error ? err.message : String(err))
+            return
+        }
         setVaults(list)
 
         if (list.length === 0) {
@@ -68,7 +79,8 @@ export function UnlockScreen({ initialUserId, onUnlocked }: UnlockScreenProps) {
         void isBiometricAvailable().then(setBiometricAvailable)
     }, [refresh])
 
-    if (vaults === null) return null
+    if (storageError !== null) return <StorageFailure message={storageError} />
+    if (vaults === null) return <LoadingCard />
 
     return (
         <div className="relative flex min-h-svh w-full flex-col justify-center px-4 py-10">
@@ -107,6 +119,46 @@ export function UnlockScreen({ initialUserId, onUnlocked }: UnlockScreenProps) {
                     />
                 )}
             </div>
+        </div>
+    )
+}
+
+/** Shown while the database is opening, so the screen is never empty. */
+function LoadingCard() {
+    return (
+        <div className="flex min-h-svh items-center justify-center px-4">
+            <p className="text-muted-foreground flex items-center gap-2 text-sm">
+                <Loader2 className="size-4 animate-spin" />
+                Opening local storage…
+            </p>
+        </div>
+    )
+}
+
+/**
+ * Shown when IndexedDB cannot be opened at all.
+ *
+ * This replaces a blank page - the worst possible outcome, because it explains
+ * nothing and offers nothing. The most common cause is another tab holding the
+ * database open on an older schema, so the first suggestion is the one that
+ * usually works and costs nothing.
+ */
+function StorageFailure({ message }: { message: string }) {
+    return (
+        <div className="flex min-h-svh items-center justify-center px-4">
+            <Card className="w-full max-w-md shadow-lg">
+                <CardHeader>
+                    <CardTitle className="text-lg">Cannot open local storage</CardTitle>
+                    <CardDescription>{message}</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-3">
+                    <Button onClick={() => window.location.reload()}>Reload</Button>
+                    <p className="text-muted-foreground text-xs">
+                        If this persists, close every other tab of this app and reload. Notes that
+                        have already synced stay recoverable from the server.
+                    </p>
+                </CardContent>
+            </Card>
         </div>
     )
 }

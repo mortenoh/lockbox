@@ -331,3 +331,41 @@ Python snake_case internally, camelCase on the wire via Pydantic aliases. `iv` a
 clock — the server never generates one, because the client is the source of truth.
 
 Full endpoint documentation is in the [API Reference](../reference/api.md).
+
+## A blank page is never an acceptable failure
+
+Three separate defects in this project produced the same symptom — a page that
+loaded, rendered nothing, and reported no error. They are worth listing
+together, because the shared symptom made each one look like the previous one
+returning.
+
+| Cause | Why clearing caches did not help |
+| --- | --- |
+| Service worker stuck in `waiting`, serving a shell whose assets a rebuild renamed | It did help, once the worker was actually replaced |
+| No `Cache-Control` on `/`, so the browser served a stale shell heuristically | The HTTP cache is not Cache Storage, and unregistering a worker does not touch it |
+| **`onblocked` unhandled when opening IndexedDB** | Not a cache at all. No amount of clearing could fix it. |
+
+The third was the most instructive. An IndexedDB upgrade cannot begin while
+another connection is open on the old version, and the open request then fires
+`onblocked`. That handler was missing, so the promise never settled, every
+caller awaited forever, and the sign-in screen sat on `if (vaults === null)
+return null`.
+
+Three things were wrong at once, and all three are worth fixing anywhere:
+
+1. **An unsettled promise is worse than a rejected one.** A rejection can be
+   shown and acted on. A hang cannot.
+2. **`onversionchange` was missing**, so an open tab never released the database
+   and blocked every other tab indefinitely. One stale tab could brick the app
+   everywhere.
+3. **`return null` was treated as a loading state.** It is not — it is an
+   invisible failure. There is now a loading card and an error card, and the
+   sign-in screen cannot render nothing.
+
+!!! tip "Working in a private window is a diagnosis, not a workaround"
+    A private window has no service worker, no HTTP cache and no existing
+    database. If it works there and nowhere else, the cause is client state — and
+    which of the three it is depends on what clearing changes. Clearing Cache
+    Storage and seeing no difference is itself strong evidence, and it is the
+    step most likely to be skipped because the first two causes made it look
+    like a caching problem.

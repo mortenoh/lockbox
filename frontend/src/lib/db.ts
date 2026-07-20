@@ -176,8 +176,41 @@ function openDb(): Promise<IDBDatabase> {
             }
         }
 
-        request.onsuccess = () => resolve(request.result)
+        request.onsuccess = () => {
+            const db = request.result
+
+            // Another tab wanting a newer version cannot upgrade while this
+            // connection is open. Closing on request is what lets it proceed -
+            // without this, one stale tab blocks every other tab indefinitely.
+            db.onversionchange = () => {
+                db.close()
+                dbPromise = null
+            }
+
+            resolve(db)
+        }
+
         request.onerror = () => reject(request.error)
+
+        // Fires when an upgrade cannot start because another connection is
+        // still open on the old version. Previously unhandled, which meant the
+        // promise simply never settled: every caller awaited forever and the UI
+        // rendered nothing at all. A hang is worse than an error, because there
+        // is nothing to show the user and nothing to act on.
+        request.onblocked = () => {
+            reject(
+                new Error(
+                    'The database is open in another tab running an older version of this app. ' +
+                        'Close the other tabs and reload.',
+                ),
+            )
+        }
+    })
+
+    // A failed open must not be cached, or every later call reuses the same
+    // rejected promise and the app can never recover without a reload.
+    dbPromise.catch(() => {
+        dbPromise = null
     })
 
     return dbPromise
