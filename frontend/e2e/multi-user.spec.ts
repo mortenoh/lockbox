@@ -32,8 +32,13 @@ test.describe('multiple users on one device', () => {
         await expect(page.getByText('District Office')).toBeVisible()
     })
 
-    test('each user sees only their own notes', async ({ page }) => {
+    test('an unsynced note stays invisible to other users', async ({ page, context }) => {
         await createUser(page, 'Ward 3 Clinic', '1111')
+
+        // Offline, so the note exists only in the clinic's local vault. Once a
+        // note reaches the server it is shared by design - local isolation is
+        // about records that have not left the device.
+        await context.setOffline(true)
         await addNote(page, 'Clinic note')
         await page.getByRole('button', { name: 'Sign out and switch user' }).click()
 
@@ -42,10 +47,40 @@ test.describe('multiple users on one device', () => {
         await enterPin(page, '2222')
         await page.getByRole('button', { name: 'Create vault' }).click()
 
-        // District Office must not see the clinic's note - not even as an
-        // undecryptable placeholder.
+        // District Office must not see the clinic's unsynced note - not even
+        // as an undecryptable placeholder.
         await expect(page.getByText('Clinic note')).toBeHidden()
         await expect(page.getByText('No notes yet')).toBeVisible()
+        await context.setOffline(false)
+    })
+
+    test('a synced note is pulled for a second user, re-encrypted under their key', async ({
+        page,
+    }) => {
+        await createUser(page, 'Ward 3 Clinic', '1111')
+        await addNote(page, 'Clinic note')
+        // Must reach the server before switching, or there is nothing to share.
+        await expect(page.getByText('on server')).toBeVisible({ timeout: 20_000 })
+        await page.getByRole('button', { name: 'Sign out and switch user' }).click()
+
+        await page.getByRole('button', { name: /Add user/ }).click()
+        await page.getByLabel('Name').fill('District Office')
+        await enterPin(page, '2222')
+        await page.getByRole('button', { name: 'Create vault' }).click()
+
+        // Unlock runs a full sync cycle, so the shared record arrives readable:
+        // the server copy is plaintext by design, only local storage is per-user
+        // encrypted.
+        await expect(page.getByText('Clinic note')).toBeVisible({ timeout: 20_000 })
+
+        // One server note, two local records - one per user, each encrypted
+        // under that user's own key. The compound [ownerId, id] key is what
+        // lets the copies coexist.
+        const idb = await readIndexedDb(page)
+        expect(idb.notes).toHaveLength(2)
+        expect(idb.notes[0].id).toBe(idb.notes[1].id)
+        expect(idb.notes[0].ownerId).not.toBe(idb.notes[1].ownerId)
+        expect(idb.notes[0].ciphertext).not.toBe(idb.notes[1].ciphertext)
     })
 
     test("one user's PIN cannot open another's vault", async ({ page }) => {
@@ -114,16 +149,23 @@ test.describe('multiple users on one device', () => {
     test('removing a user deletes only their records', async ({ page }) => {
         await createUser(page, 'Ward 3 Clinic', '1111')
         await addNote(page, 'Clinic note')
+        await expect(page.getByText('on server')).toBeVisible({ timeout: 20_000 })
         await page.getByRole('button', { name: 'Sign out and switch user' }).click()
 
         await page.getByRole('button', { name: /Add user/ }).click()
         await page.getByLabel('Name').fill('District Office')
         await enterPin(page, '2222')
         await page.getByRole('button', { name: 'Create vault' }).click()
+        // Let the unlock-triggered pull land before counting records, or the
+        // totals below race it.
+        await expect(page.getByText('Clinic note')).toBeVisible({ timeout: 20_000 })
         await addNote(page, 'District note')
+        await expect(page.getByText('District note')).toBeVisible()
 
         const before = await readIndexedDb(page)
-        expect(before.notes).toHaveLength(2)
+        // Three records: one per user for the shared clinic note, plus the
+        // district's own.
+        expect(before.notes).toHaveLength(3)
 
         await page.getByRole('button', { name: 'Sign out and switch user' }).click()
 
