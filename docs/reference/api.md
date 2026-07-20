@@ -36,10 +36,10 @@ Interactive OpenAPI docs are available at `/docs` and `/redoc` while the server 
 | `GET` | `/api/info` | Server identity and both note counts; the reachability probe |
 | `GET` | `/api/plain-notes` | All stored notes, readable |
 | `PUT` | `/api/plain-notes/{note_id}` | Upsert one readable note (idempotent) |
-| `DELETE` | `/api/plain-notes/{note_id}` | Delete one readable note (idempotent, 204) |
+| `DELETE` | `/api/plain-notes/{note_id}` | Tombstone one readable note (idempotent, 204) |
 | `GET` | `/api/notes` | All stored notes, encrypted |
 | `PUT` | `/api/notes/{note_id}` | Upsert one encrypted note (idempotent) |
-| `DELETE` | `/api/notes/{note_id}` | Delete one encrypted note (idempotent, 204) |
+| `DELETE` | `/api/notes/{note_id}` | Tombstone one encrypted note (idempotent, 204) |
 
 Everything else under `/` is served from the built frontend by a `StaticFiles` mount with
 `html=True`, so unknown paths fall back to the app shell — what a single-page app wants.
@@ -107,9 +107,11 @@ async def info() -> ServerInfo:
     )
 ```
 
-`noteCount` is the encrypted store, `plainNoteCount` the readable one. They are independent
-— switching sync mode does not migrate anything, so a client that has used both will have
-records in both.
+`noteCount` is the encrypted store, `plainNoteCount` the readable one. Both come from
+`store.count()`, which counts only live records — a tombstoned (deleted) note is excluded,
+so the counts track what a user would actually see, not how many rows the JSON file holds.
+They are independent — switching sync mode does not migrate anything, so a client that has
+used both will have records in both.
 
 !!! tip "Always fetched with `cache: 'no-store'`"
     A cached 200 would report a server that is not there as reachable. The service worker
@@ -123,7 +125,10 @@ The DHIS2-realistic path, and what the default sync mode uses.
 
 ### `GET /api/plain-notes`
 
-Every stored note in readable form, oldest first (by `createdAt`).
+Every stored note in readable form, oldest first (by `createdAt`) — **tombstones included**.
+This is a full-table pull, and the client needs deleted rows to converge, so the endpoint
+passes `include_deleted=True`. A tombstone arrives as an ordinary record carrying
+`"deleted": true`; the client applies it by removing its local copy.
 
 **Response** `200 OK` — `PlainNoteList`
 
@@ -134,8 +139,10 @@ Every stored note in readable form, oldest first (by `createdAt`).
       "id": "0f3a5c1e-8b21-4d7a-9f10-2c6e5b7a4d33",
       "title": "Facility visit",
       "body": "12 doses administered",
+      "author": "amina",
       "createdAt": 1763640000000,
-      "updatedAt": 1763640120000
+      "updatedAt": 1763640120000,
+      "deleted": false
     }
   ]
 }
@@ -150,7 +157,7 @@ async def list_plain_notes() -> PlainNoteList:
     A per-user passphrase must never influence what lands here, or the
     records stop being shareable.
     """
-    return PlainNoteList(notes=plain_store.list())
+    return PlainNoteList(notes=plain_store.list(include_deleted=True))
 ```
 
 That docstring is the whole architectural argument compressed into three lines. See
@@ -170,10 +177,15 @@ the body id.
   "id": "0f3a5c1e-8b21-4d7a-9f10-2c6e5b7a4d33",
   "title": "Facility visit",
   "body": "12 doses administered",
+  "author": "amina",
   "createdAt": 1763640000000,
   "updatedAt": 1763640120000
 }
 ```
+
+The client sends `author` (see [`sendEntry`](../design/offline-sync.md#sending-one-entry));
+it omits `deleted`, which defaults to `false`. Deletes go through `DELETE`, not a PUT with
+`"deleted": true`.
 
 **Responses**
 
@@ -197,17 +209,24 @@ which is why plaintext sync requires an unlocked vault. See
 
 ### `DELETE /api/plain-notes/{note_id}`
 
-Delete one readable note.
+Tombstone one readable note. This does **not** remove the row: the store sets `deleted =
+True` and stamps a fresh `updated_at`, so the deletion is a dated record that other devices
+can pull and apply. A hard removal would be invisible to every other client, which would
+keep its copy forever.
 
 **Response** `204 No Content`, always — including for an id that does not exist.
 
 ```python
 @app.delete("/api/plain-notes/{note_id}", status_code=204)
 async def delete_plain_note(note_id: str) -> Response:
-    """Delete one readable note. Idempotent."""
-    plain_store.delete(note_id)
+    """Tombstone one readable note. Idempotent."""
+    plain_store.delete(note_id, int(time.time() * 1000))
     return Response(status_code=204)
 ```
+
+The `int(time.time() * 1000)` is the tombstone's `when` in epoch milliseconds. See
+[Idempotency](#idempotency-in-both-families) for why the store bumps `updated_at` rather
+than simply recording that timestamp.
 
 ---
 
@@ -217,7 +236,9 @@ The demonstration path. Structurally identical, opaque bodies.
 
 ### `GET /api/notes`
 
-Every stored note, still encrypted, oldest first (by `createdAt`).
+Every stored note, still encrypted, oldest first (by `createdAt`) — **tombstones included**,
+the same as the plaintext endpoint (`include_deleted=True`). A tombstone here carries the
+same `iv`/`ciphertext` it had when live, plus `"deleted": true`.
 
 **Response** `200 OK` — `NoteList`
 
@@ -229,7 +250,8 @@ Every stored note, still encrypted, oldest first (by `createdAt`).
       "iv": "kZ8Qw1nT9xLp2vBa",
       "ciphertext": "9mS1cQ...truncated...ZQ",
       "createdAt": 1763640000000,
-      "updatedAt": 1763640120000
+      "updatedAt": 1763640120000,
+      "deleted": false
     }
   ]
 }
@@ -256,6 +278,8 @@ Upsert one encrypted note. The path id must equal the body id.
 }
 ```
 
+`deleted` may be omitted on input (it defaults to `false`); deletes go through `DELETE`.
+
 **Responses**
 
 | Status | Meaning |
@@ -281,15 +305,16 @@ async def put_note(note_id: str, note: EncryptedNote) -> EncryptedNote:
 
 ### `DELETE /api/notes/{note_id}`
 
-Delete one note.
+Tombstone one note. As with the plaintext endpoint the row is kept, marked `deleted = True`
+with a fresh `updated_at`, so the deletion travels to other devices on their next pull.
 
 **Response** `204 No Content`, always — including for an id that does not exist.
 
 ```python
 @app.delete("/api/notes/{note_id}", status_code=204)
 async def delete_note(note_id: str) -> Response:
-    """Delete one note. Deleting an unknown id is not an error (idempotent)."""
-    store.delete(note_id)
+    """Tombstone one note. Deleting an unknown id is not an error."""
+    store.delete(note_id, int(time.time() * 1000))
     return Response(status_code=204)
 ```
 
@@ -311,8 +336,41 @@ succeeded but whose response was lost would be retried, get a 404, be classified
 permanent 4xx failure, and be parked in front of the user as an error. It is not an error —
 the note is gone, which is what was asked for.
 
-There are no tombstones, so a delete is invisible to `pull()` on other clients. Single-device
-only, and on the [Roadmap](../context/roadmap.md).
+### Deletes are tombstones, not row removals
+
+A `DELETE` does not drop the record. `RecordStore.delete(note_id, when)` keeps the row,
+sets `deleted = True`, and stamps a new `updated_at`:
+
+```python
+def delete(self, note_id: str, when: int) -> bool:
+    with self._lock:
+        existing = self._notes.get(note_id)
+        if existing is None or existing.deleted:
+            return False
+        self._notes[note_id] = existing.model_copy(
+            update={"deleted": True, "updated_at": max(when, existing.updated_at + 1)}
+        )
+        self._flush()
+        return True
+```
+
+A dated tombstone is what lets deletion converge across devices. A hard removal would be
+invisible to every other client — each would keep its copy indefinitely, and an older queued
+PUT could even resurrect the record. Keeping the tombstone means the same last-write-wins
+rule that settles edits also settles deletions: the list endpoints return the tombstone
+(`include_deleted=True`), and each client's `pull()` sees `"deleted": true` and removes its
+local copy.
+
+The `updated_at` is set to `max(when, existing.updated_at + 1)`, not simply to `when`. The
+`when` a `DELETE` handler passes is the *server's* clock, while every other timestamp in the
+system is a *client* clock, and the two need not agree. Bumping to at least `existing + 1`
+guarantees the tombstone is strictly newer than the record it deletes, so it wins the
+last-write-wins comparison even if the server clock lags the client that wrote the note. Any
+later PUT still has to beat that value to un-delete, which is the intended behaviour.
+
+Because tombstones live in the store, `count()` (and therefore `/api/info`) excludes them,
+while the pull endpoints include them — the counts reflect what a user sees, the pulls
+reflect what a client must converge on.
 
 ## Schemas
 
@@ -330,6 +388,8 @@ class NoteBase(BaseModel):
     id: str = Field(min_length=1, max_length=128)
     created_at: int = Field(alias="createdAt", ge=0)
     updated_at: int = Field(alias="updatedAt", ge=0)
+    # Tombstone marker: a delete keeps a dated row so other devices converge.
+    deleted: bool = False
 ```
 
 | Field | Wire name | Type | Description |
@@ -337,9 +397,11 @@ class NoteBase(BaseModel):
 | `id` | `id` | string, 1–128 | Client-generated UUID. Doubles as the idempotency key |
 | `created_at` | `createdAt` | int ≥ 0 | Client clock, epoch milliseconds |
 | `updated_at` | `updatedAt` | int ≥ 0 | Client clock, epoch milliseconds. Drives last-write-wins |
+| `deleted` | `deleted` | bool, default `false` | Tombstone marker. `true` on a deleted record; settled by the same last-write-wins rule. Always present on the wire; a `DELETE` is how it becomes `true` |
 
-Python snake_case internally, camelCase on the wire via Pydantic aliases.
-`populate_by_name=True` means both spellings are accepted on input.
+Python snake_case internally, camelCase on the wire via Pydantic aliases (`deleted` has no
+alias — it is spelled the same either way). `populate_by_name=True` means both spellings are
+accepted on input.
 
 !!! warning "Timestamps come from the client, and the client's clock may be wrong"
     The server never generates a timestamp, because the client is the source of truth and
@@ -360,12 +422,15 @@ class PlainNote(NoteBase):
 
     title: str = Field(min_length=1, max_length=1_000)
     body: str = Field(default="", max_length=100_000)
+    # Self-declared author, plaintext by necessity so other users see authorship.
+    author: str = Field(default="unknown", min_length=1, max_length=100)
 ```
 
 | Field | Wire name | Type | Description |
 | --- | --- | --- | --- |
 | `title` | `title` | string, 1–1,000 | Readable note title. Required and non-empty |
 | `body` | `body` | string, 0–100,000 | Readable note body. Defaults to `""` |
+| `author` | `author` | string, 1–100 | Who wrote it. Defaults to `"unknown"`. Plaintext by necessity — other users need to see authorship, which is exactly the kind of shared-context field that cannot survive per-user encryption. **Self-declared and forgeable** under shared-token auth (see the authentication note at the top); in a real deployment this would be the DHIS2 session user, not a client-supplied string |
 
 ### `EncryptedNote`
 
@@ -440,7 +505,8 @@ from it.
       "iv": "kZ8Qw1nT9xLp2vBa",
       "ciphertext": "9mS1cQ...",
       "createdAt": 1763640000000,
-      "updatedAt": 1763640120000
+      "updatedAt": 1763640120000,
+      "deleted": false
     }
   ]
 }
@@ -455,12 +521,17 @@ from it.
       "id": "0f3a5c1e-8b21-4d7a-9f10-2c6e5b7a4d33",
       "title": "Facility visit",
       "body": "12 doses administered",
+      "author": "amina",
       "createdAt": 1763640000000,
-      "updatedAt": 1763640120000
+      "updatedAt": 1763640120000,
+      "deleted": false
     }
   ]
 }
 ```
+
+Tombstoned rows stay in these files with `"deleted": true` — which is why `cat`-ing a store
+can show more rows than `/api/info` counts.
 
 JSON files are chosen precisely because they are trivial to `cat` and compare — the
 contrast between those two blocks is the project's central point, visible in ten seconds.

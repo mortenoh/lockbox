@@ -170,6 +170,7 @@ sequenceDiagram
     participant D as Developer
     participant S as Server
     participant B as Browser
+    participant P as Page
     participant SW as Service worker
 
     D->>S: change any static asset
@@ -178,10 +179,11 @@ sequenceDiagram
     Note over B: file differs byte-wise from<br/>the installed worker -> update triggered
     B->>SW: install new worker
     SW->>SW: cache.addAll(SHELL_ASSETS) into the new cache
-    Note over SW: waiting...
-    B->>SW: postMessage("SKIP_WAITING") when the page decides
+    SW->>SW: skipWaiting() -> activate immediately
     SW->>SW: activate -> delete every cache != CACHE_VERSION
     SW->>SW: clients.claim()
+    SW-->>P: controllerchange
+    Note over P: guarded reload once<br/>(hadController && !reloading)
 ```
 
 ```javascript
@@ -204,23 +206,34 @@ self.addEventListener("activate", (event) => {
 
 ## Update handoff
 
-The page, not the worker, decides when a waiting worker takes over:
+The handoff is automatic, not page-driven. A new worker takes over as soon as it has
+finished installing — there is no waiting state to negotiate:
+
+1. **`install`** finishes `cache.addAll()` and calls `self.skipWaiting()`, so the new worker
+   does not queue behind the old one.
+2. **`activate`** deletes every cache whose name is not the current `CACHE_VERSION`, then
+   calls `self.clients.claim()` to take control of already-open tabs immediately, rather
+   than waiting for the next navigation.
+3. The controlled page sees a **`controllerchange`** event and reloads exactly once, so the
+   document stops running the JavaScript the *previous* worker served. That reload lives in
+   the page (`main.tsx`), and the mechanics — including why it is guarded — are covered in
+   [Updating: why the worker must not wait](#updating-why-the-worker-must-not-wait) below.
+
+A legacy message handler remains, but it is **no longer the mechanism** — `install` already
+skips waiting on its own. It is kept only so a page can still force activation explicitly:
 
 ```javascript
 self.addEventListener("message", (event) => {
-    // The page decides when a waiting worker activates, so an update cannot
-    // swap code out from under a half-finished write.
+    // Retained so a page can still force activation explicitly, though install
+    // now skips waiting on its own.
     if (event.data === "SKIP_WAITING") self.skipWaiting();
 });
 ```
 
-Calling `skipWaiting()` unconditionally inside `install` is the common shortcut and it is
-subtly dangerous in an app like this: the new worker can activate mid-transaction and start
-serving new code to a page still running old code, with an outbox drain in flight. Letting
-the UI trigger it — typically behind a "Reload to update" prompt — keeps that under control.
-
-`clients.claim()` in `activate` means that once the new worker *does* activate, it controls
-already-open tabs immediately rather than waiting for a navigation.
+An earlier design deferred activation to a `SKIP_WAITING` message that the page never sent,
+which left rebuilt workers stuck in `waiting`. Why that produced a blank page rather than
+merely stale code, and why immediate activation is the fix, is the subject of the next
+section.
 
 ## Serving the worker from `/`
 

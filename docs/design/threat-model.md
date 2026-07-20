@@ -91,8 +91,8 @@ there to let you check.
     - Subresource Integrity on anything not served from your own origin, and ideally
       nothing served from anywhere else.
     - Ruthless dependency review; supply-chain attacks land directly in this blast radius.
-    - Auto-lock on inactivity, which shrinks the window during which a DEK is live. Also
-      on the roadmap.
+    - Auto-lock on inactivity, which shrinks the window during which a DEK is live.
+      Implemented (`use-auto-lock.ts`) and configurable on the Security page.
     - Trusted Types, to make DOM-based XSS structurally difficult.
 
     The honest framing: **encryption at rest reduces the local attack surface from "always
@@ -114,7 +114,8 @@ there to let you check.
     What has to be true instead, in a real deployment:
 
     - **Authentication and authorisation on the API**, with per-user and per-org-unit
-      scoping. DHIS2 has this. The demo server has *none at all* — see below.
+      scoping. DHIS2 has this. The demo server has at most an optional *shared* bearer token
+      — not per-user, no authorisation, no scoping — see below.
     - **TLS everywhere**, terminated somewhere you trust.
     - **Server-side encryption at rest** if the deployment's policy requires it (disk
       encryption, database-level encryption). That is an operational control, not something

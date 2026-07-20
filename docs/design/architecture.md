@@ -63,10 +63,11 @@ and the vault still opens with no network at all.
 
 ### 2. Offline sync — "writes survive without a network"
 
-IndexedDB is the source of truth, not the server. Every local write is applied to the
-`notes` store and appended to the `outbox` queue in the same logical operation. The sync
-engine drains the outbox whenever the server is reachable, in whichever mode is selected.
-See [Offline Sync](offline-sync.md).
+IndexedDB is the source of truth, not the server. Every local write lands in the `notes`
+store and the `outbox` queue in **one IndexedDB transaction** (`putNoteAndEnqueue`), so a
+crash, quota error or closed tab can never persist the note without its queue entry — a
+state that would silently never sync. The sync engine drains the outbox whenever the server
+is reachable, in whichever mode is selected. See [Offline Sync](offline-sync.md).
 
 ### 3. Encryption at rest — "the local data is useless without the passphrase"
 
@@ -128,9 +129,8 @@ sequenceDiagram
     UI->>C: encryptJson({title, body})
     Note over C: fresh random 12-byte IV,<br/>AES-256-GCM with session DEK
     C-->>UI: {iv, ciphertext}
-    UI->>DB: putNote({id, iv, ciphertext, createdAt, updatedAt, synced:false})
-    UI->>DB: enqueue("put", id, payload)
-    Note over DB: payload is the complete<br/>encrypted record - self-contained
+    UI->>DB: putNoteAndEnqueue({id, iv, ciphertext, createdAt, updatedAt, synced:false}, "put", payload)
+    Note over DB: note + outbox entry committed in ONE<br/>IndexedDB transaction; payload is the<br/>complete encrypted record - self-contained
     UI-->>U: Note visible immediately (optimistic)
 
     rect rgba(120,144,220,0.12)
@@ -173,6 +173,7 @@ if (mode === 'plaintext') {
         id: payload.id,
         title: content.title,
         body: content.body,
+        author: content.author,
         createdAt: payload.createdAt,
         updatedAt: payload.updatedAt,
     }
@@ -296,8 +297,10 @@ def put(self, note: T) -> T:
 ```
 
 The encrypted store genuinely cannot decrypt anything — it never receives key material.
-The plaintext store reads everything, which is the whole point of it. Neither has any
-authentication; see [API Reference](../reference/api.md).
+The plaintext store reads everything, which is the whole point of it. API access is guarded
+by an optional shared bearer token (`--auth token`); with `--auth none` there is no gate at
+all, which is only safe on `127.0.0.1`. Neither mode is per-user authentication. See
+[API Reference](../reference/api.md).
 
 Writes are flushed atomically (`tmp.write_text(...)` then `tmp.replace(path)`) so a crash
 mid-write cannot truncate the file.
@@ -314,6 +317,8 @@ class NoteBase(BaseModel):
     id: str = Field(min_length=1, max_length=128)
     created_at: int = Field(alias="createdAt", ge=0)
     updated_at: int = Field(alias="updatedAt", ge=0)
+    # Tombstone marker: a delete keeps a dated row so other devices converge.
+    deleted: bool = False
 
 
 class EncryptedNote(NoteBase):
@@ -324,11 +329,16 @@ class EncryptedNote(NoteBase):
 class PlainNote(NoteBase):
     title: str = Field(min_length=1, max_length=1_000)
     body: str = Field(default="", max_length=100_000)
+    # Self-declared, plaintext by necessity so other users see authorship.
+    author: str = Field(default="unknown", min_length=1, max_length=100)
 ```
 
 That the id and timestamps sit in the shared base is not an accident of refactoring: they
 are exactly the fields that must be readable by the server in *either* mode, so it can
-store, order and de-duplicate records.
+store, order and de-duplicate records. `deleted` lives there for the same reason — a delete
+is a dated tombstone that has to settle by last-write-wins whether or not the server can
+read the body — while `author` is plaintext-only, since it exists so other users can see who
+wrote a shared record.
 
 Python snake_case internally, camelCase on the wire via Pydantic aliases. `iv` and
 `ciphertext` are base64url. Timestamps are milliseconds since the epoch, from the *client*
