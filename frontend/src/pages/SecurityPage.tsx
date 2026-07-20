@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { checkAuth, getToken, isRemembered, setToken as storeToken } from '@/lib/api'
-import { estimateCrackTime, exportDekForRewrap, type VaultRecord } from '@/lib/crypto'
+import { exportDekForRewrap, type VaultRecord } from '@/lib/crypto'
 import * as db from '@/lib/db'
 import { AUTO_LOCK_OPTIONS, setAutoLockMinutes } from '@/lib/session'
 import {
@@ -183,10 +183,12 @@ export function SecurityPage({
                         {vault.prf && <Badge>enabled</Badge>}
                     </div>
                     <CardDescription>
-                        A PIN has very little entropy — this one could be brute-forced from a stolen
-                        device in about <strong>{estimateCrackTime('1111')}</strong>. An
-                        authenticator rate-limits attempts in hardware and returns high-entropy key
-                        material, which is the one thing a browser cannot do on its own.
+                        A PIN has very little entropy, and how long it would survive an offline
+                        attack depends on the attacker&rsquo;s hardware and on how predictable the
+                        PIN is — neither of which this app can know. An authenticator sidesteps the
+                        question: it rate-limits attempts <em>in hardware</em> and returns
+                        high-entropy key material, which is the one thing a browser cannot do on
+                        its own.
                     </CardDescription>
                 </CardHeader>
 

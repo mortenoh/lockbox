@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { addNote, createUser, enterPin, readIndexedDb, wipeDevice } from './helpers'
+import { addNote, clearServer, createUser, enterPin, readIndexedDb, wipeDevice } from './helpers'
 
 /**
  * Several users sharing one device.
@@ -12,7 +12,8 @@ import { addNote, createUser, enterPin, readIndexedDb, wipeDevice } from './help
  * stop it regressing.
  */
 test.describe('multiple users on one device', () => {
-    test.beforeEach(async ({ page }) => {
+    test.beforeEach(async ({ page, request }) => {
+        await clearServer(request)
         await page.goto('/')
         await wipeDevice(page)
     })

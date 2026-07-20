@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { addNote, createUser, readIndexedDb, wipeDevice } from './helpers'
+import { addNote, clearServer, createUser, readIndexedDb, wipeDevice } from './helpers'
 
 /**
  * Offline behaviour: the service worker, the outbox, and reconnection.
@@ -9,7 +9,8 @@ import { addNote, createUser, readIndexedDb, wipeDevice } from './helpers'
  * service worker sees a genuine network failure while the test keeps control.
  */
 test.describe('offline', () => {
-    test.beforeEach(async ({ page }) => {
+    test.beforeEach(async ({ page, request }) => {
+        await clearServer(request)
         await page.goto('/')
         await wipeDevice(page)
     })

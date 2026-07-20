@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test'
+import { expect, type APIRequestContext, type Page } from '@playwright/test'
 
 /**
  * Shared steps for driving the app.
@@ -94,4 +94,23 @@ export async function wipeDevice(page: Page): Promise<void> {
             d.onsuccess = d.onerror = d.onblocked = () => res()
         })
     })
+}
+
+/**
+ * Empty the server between tests.
+ *
+ * Needed since auto-pull landed: a fresh vault now fetches everything the
+ * server holds, so notes written by an earlier test would appear inside a later
+ * one and break its counts. Tombstones are left behind by design, which is
+ * exactly what the deletion-convergence behaviour requires.
+ */
+export async function clearServer(request: APIRequestContext): Promise<void> {
+    for (const path of ['/api/plain-notes', '/api/notes']) {
+        const response = await request.get(path)
+        if (!response.ok()) continue
+        const { notes } = (await response.json()) as { notes: { id: string }[] }
+        for (const note of notes) {
+            await request.delete(`${path}/${encodeURIComponent(note.id)}`)
+        }
+    }
 }

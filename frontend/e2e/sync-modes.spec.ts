@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { addNote, createUser, goToPage, wipeDevice } from './helpers'
+import { addNote, clearServer, createUser, goToPage, wipeDevice } from './helpers'
 
 /**
  * The two sync modes, and the boundary between them.
@@ -10,7 +10,8 @@ import { addNote, createUser, goToPage, wipeDevice } from './helpers'
  * against the real server is more convincing than any prose.
  */
 test.describe('sync modes', () => {
-    test.beforeEach(async ({ page }) => {
+    test.beforeEach(async ({ page, request }) => {
+        await clearServer(request)
         await page.goto('/')
         await wipeDevice(page)
     })

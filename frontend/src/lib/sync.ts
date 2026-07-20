@@ -83,6 +83,23 @@ export type SyncMode = 'plaintext' | 'encrypted'
 export const DEFAULT_SYNC_MODE: SyncMode = 'plaintext'
 
 const POLL_INTERVAL_MS = 30_000
+/**
+ * How often to fetch remote changes.
+ *
+ * Slower than the outbox poll on purpose. Draining is cheap and urgent - it is
+ * the user's own unsent work. Pulling is a full fetch of the server's records
+ * and only matters when *someone else* has written something, so a lower
+ * frequency is the right trade.
+ */
+const PULL_INTERVAL_MS = 60_000
+/**
+ * Minimum gap between pulls triggered by the user returning to the tab.
+ *
+ * Coming back is a strong signal that fresh data is wanted, so the ordinary
+ * one-minute floor is too slow to feel responsive. A few seconds is still
+ * enough to stop rapid tab-switching from hammering the server.
+ */
+const PULL_ON_FOCUS_MIN_MS = 3_000
 const BACKOFF_BASE_MS = 1_000
 const BACKOFF_MAX_MS = 60_000
 
@@ -95,6 +112,8 @@ export interface SyncState {
     pending: number
     failed: number
     lastSyncAt: number | null
+    /** Bumped whenever a pull actually changed local data, so the UI reloads. */
+    lastPullAt: number | null
     lastError: string | null
     mode: SyncMode
     /** True when plaintext mode is selected but the vault is locked. */
@@ -125,6 +144,7 @@ let state: SyncState = {
     pending: 0,
     failed: 0,
     lastSyncAt: null,
+    lastPullAt: null,
     lastError: null,
     mode: loadMode(),
     blockedByLock: false,
@@ -134,6 +154,8 @@ let state: SyncState = {
 let backoffUntil = 0
 let draining = false
 let started = false
+let pulling = false
+let lastPullAttempt = 0
 
 /**
  * How the engine gets plaintext when it needs it.
@@ -501,6 +523,33 @@ async function pullEncrypted(): Promise<number> {
     return changed
 }
 
+/**
+ * Pull remote changes if enough time has passed.
+ *
+ * Guarded by its own timestamp rather than piggybacking on the drain interval,
+ * so a burst of local writes cannot trigger a burst of full fetches.
+ */
+async function maybePull(minIntervalMs = PULL_INTERVAL_MS): Promise<void> {
+    if (pulling) return
+    if (Date.now() - lastPullAttempt < minIntervalMs) return
+
+    pulling = true
+    lastPullAttempt = Date.now()
+    try {
+        const changed = await pull()
+        // Only announce a change when there was one - an idle poll should not
+        // make the UI re-render every minute.
+        if (changed > 0) setState({ lastPullAt: Date.now() })
+    } catch {
+        // Offline, locked, or unauthorised. All already visible in the state.
+    } finally {
+        pulling = false
+    }
+}
+
+/** Fetch remote changes now, regardless of the interval. */
+export const pullNow = () => maybePull(0)
+
 /** Recount the queue after a local change. */
 export const refresh = refreshCounts
 
@@ -513,6 +562,7 @@ export function start(): void {
         backoffUntil = 0 // A fresh connection deserves an immediate attempt.
         setState({ online: true })
         void drain({ force: true })
+        void maybePull(0)
     })
 
     window.addEventListener('offline', () => setState({ online: false }))
@@ -520,10 +570,16 @@ export function start(): void {
     // The workhorse on iOS/Safari, where Background Sync does not exist:
     // returning to the tab is the most reliable moment to flush.
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') void drain()
+        if (document.visibilityState === 'visible') {
+            void drain()
+            void maybePull(PULL_ON_FOCUS_MIN_MS)
+        }
     })
 
     setInterval(() => void drain(), POLL_INTERVAL_MS)
+    setInterval(() => void maybePull(), PULL_INTERVAL_MS)
 
-    void drain({ force: true })
+    // Push local work first, then fetch. Draining before pulling means the
+    // user's own edits win a last-write-wins race against a stale server copy.
+    void drain({ force: true }).then(() => maybePull(0))
 }

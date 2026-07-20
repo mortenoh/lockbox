@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 
 import {
     addNote,
+    clearServer,
     createUser,
     enterPin,
     expectUnlocked,
@@ -17,7 +18,8 @@ import {
  * agreed with itself.
  */
 test.describe('vault', () => {
-    test.beforeEach(async ({ page }) => {
+    test.beforeEach(async ({ page, request }) => {
+        await clearServer(request)
         await page.goto('/')
         await wipeDevice(page)
     })

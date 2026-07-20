@@ -39,13 +39,19 @@ export default function App() {
         sync.setUnlockedCheck(isUnlocked)
     }, [])
 
-    // Re-read notes whenever a drain finishes, so "this device only" badges flip
-    // to "on server" without the user doing anything.
+    // Re-read notes when a drain finishes, so "this device only" badges flip to
+    // "on server" on their own - and when an automatic pull brings in changes
+    // someone else made.
     useEffect(() => {
         if (!ownerId) return
         let wasSyncing = false
+        let lastPullSeen: number | null = null
         return sync.subscribe((state) => {
             if (wasSyncing && !state.syncing) void reload()
+            if (state.lastPullAt && state.lastPullAt !== lastPullSeen) {
+                lastPullSeen = state.lastPullAt
+                void reload()
+            }
             wasSyncing = state.syncing
         })
     }, [ownerId, reload])

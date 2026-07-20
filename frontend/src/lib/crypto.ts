@@ -60,19 +60,40 @@ import type { PrfEnvelope } from '@/lib/webauthn'
  * Argon2id is *memory-hard*: every guess must allocate `memorySize` of RAM.
  * That is the whole point. PBKDF2 is merely CPU-hard, and a GPU can run tens of
  * thousands of SHA-256 chains in parallel at almost no memory cost per lane, so
- * an attacker's advantage over one browser thread is enormous. Forcing 64 MiB
+ * an attacker's advantage over one browser thread is enormous. Forcing 128 MiB
  * per guess caps how many guesses fit on a card and shrinks that advantage by
  * orders of magnitude.
  *
  * This only matters for weak passphrases - and users choose weak passphrases.
  *
- * Values follow OWASP's 2026 baseline, raised on memory. Benchmark on the
- * weakest device you must support: a low-end Android tablet is nothing like a
- * developer laptop. The KDF Lab page measures this live.
+ * Values follow OWASP's 2026 baseline, raised substantially on memory. Chosen
+ * from measurements rather than taste - the KDF Lab timed these on an Apple
+ * Silicon laptop:
+ *
+ *      64 MiB / 3 passes -> 121 ms   (previous default, too cheap)
+ *      96 MiB / 3 passes -> 197 ms
+ *     128 MiB / 3 passes -> 263 ms   <- current
+ *     128 MiB / 4 passes -> 355 ms
+ *     192 MiB / 3 passes -> 402 ms
+ *     256 MiB / 3 passes -> 554 ms
+ *
+ * The target is roughly 250-500 ms for one derivation. 128 MiB doubles the
+ * memory an attacker must commit per guess while staying comfortably
+ * allocatable on a phone, and leaves headroom for slower hardware: a low-end
+ * Android tablet can be 3-4x slower, which would push the 128/4 option past a
+ * second and make unlocking feel broken.
+ *
+ * Benchmark on the weakest device you must support before raising this further.
+ * Existing vaults keep their own recorded parameters, so a change here only
+ * affects new ones - see `vaultKdf`.
  */
 export const ARGON2ID_PARAMS = {
-    /** KiB of memory per guess. The parameter that actually hurts attackers. */
-    memorySize: 65_536, // 64 MiB
+    /**
+     * KiB of memory per guess. The parameter that actually hurts attackers,
+     * because it caps how many guesses fit on a GPU rather than merely slowing
+     * each one down.
+     */
+    memorySize: 131_072, // 128 MiB
     /** Passes over memory. Raises cost linearly for attacker and defender alike. */
     iterations: 3,
     /** Lanes. Kept at 1 - browsers give us no reliable parallelism here. */
@@ -556,25 +577,45 @@ export async function exportDekForRewrap(
 }
 
 /**
- * How much protection a chosen secret actually buys, given the KDF cost.
+ * The most commonly chosen PINs, in rough order of real-world frequency.
  *
- * Deliberately blunt: a 4-digit PIN is ~10^4 guesses, and at roughly 130 ms per
- * Argon2id evaluation an attacker holding the device exhausts that in minutes.
- * Showing the real number is more useful than a green "strong" badge.
+ * Attackers do not search a keyspace uniformly - they try these first. Public
+ * analyses of leaked PIN sets put "1234" alone at roughly 10% of four-digit
+ * choices, with the top twenty covering something like a quarter of them. A PIN
+ * on this list falls in seconds no matter how expensive the KDF is, because the
+ * attacker never really has to search.
  */
-export function estimateCrackTime(secret: string, msPerGuess = 130): string {
-    const digitsOnly = /^\d+$/.test(secret)
-    const alphabet = digitsOnly ? 10 : /^[a-z]+$/.test(secret) ? 26 : 72
-    const space = Math.pow(alphabet, secret.length)
-    // Expected work is half the keyspace.
-    const seconds = (space / 2) * (msPerGuess / 1000)
+const COMMON_PINS = new Set([
+    '1234', '1111', '0000', '1212', '7777', '1004', '2000', '4444', '2222',
+    '6969', '9999', '3333', '5555', '6666', '1122', '1313', '8888', '4321',
+    '2001', '1010', '123456', '111111', '000000', '121212', '654321', '123123',
+])
 
-    if (seconds < 60) return 'seconds'
-    if (seconds < 3600) return `${Math.round(seconds / 60)} minutes`
-    if (seconds < 86_400) return `${Math.round(seconds / 3600)} hours`
-    if (seconds < 31_536_000) return `${Math.round(seconds / 86_400)} days`
-    const years = seconds / 31_536_000
-    return years > 1e6 ? 'effectively forever' : `${Math.round(years).toLocaleString()} years`
+/**
+ * Whether a PIN appears in public "most common" lists.
+ *
+ * This is the only claim about secret strength this project is willing to make,
+ * because it is the only one that is a *fact about the input* rather than a
+ * prediction about an attacker.
+ *
+ * An earlier version showed an estimated cracking time ("about 11 minutes").
+ * It was removed. Three things were wrong with it:
+ *
+ *  1. It read as a guarantee while resting on stacked guesses - the attacker's
+ *     hardware, their parallelism, and the defender's own measured KDF cost.
+ *  2. It assumed a uniformly random secret. Search order genuinely does not
+ *     matter for one of those - expected work is half the keyspace whether the
+ *     attacker counts up, counts down or shuffles - but nobody picks randomly,
+ *     so an attacker ordering guesses by known frequency wins far sooner than
+ *     the arithmetic implies.
+ *  3. Stripped of the theatre, it was just reporting the length of the PIN.
+ *
+ * A number that cannot be honoured is worse than no number: it invites trust it
+ * has not earned. What the UI says instead is what actually reduces risk -
+ * enable biometrics, keep auto-lock short, let notes sync.
+ */
+export function isCommonPin(secret: string): boolean {
+    return COMMON_PINS.has(secret)
 }
 
 /**

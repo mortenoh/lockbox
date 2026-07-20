@@ -3,7 +3,6 @@ import { Fingerprint, KeyRound, Loader2, Plus, ShieldCheck, Trash2, UserRound } 
 
 import { PinPad } from '@/components/PinPad'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -13,7 +12,7 @@ import {
     DEFAULT_KDF,
     adoptSessionKey,
     createVault,
-    estimateCrackTime,
+    isCommonPin,
     unlockVault,
     vaultKdf,
     type VaultRecord,
@@ -158,8 +157,8 @@ function UserPicker({ vaults, onSelect, onAdd, onRemoved }: UserPickerProps) {
                             <span className="grid">
                                 <span className="font-medium">{vault.owner}</span>
                                 <span className="text-muted-foreground text-xs">
-                                    {vaultKdf(vault).kdf === 'argon2id' ? 'Argon2id' : 'PBKDF2'}
-                                    {vault.prf ? ` · ${vault.prf.label}` : ''}
+                                    {vaultKdf(vault).kdf === 'pbkdf2' && 'legacy PBKDF2 · '}
+                                    {vault.prf ? vault.prf.label : 'PIN'}
                                 </span>
                             </span>
                         </button>
@@ -292,7 +291,7 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
 
                         {busy === 'secret' && (
                             <p className="text-muted-foreground text-center text-xs">
-                                Deriving key with Argon2id…
+                                Deriving key…
                             </p>
                         )}
                     </>
@@ -365,8 +364,6 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
                 <div className="flex items-center gap-2">
                     <KeyRound className="text-primary size-5" aria-hidden />
                     <CardTitle className="text-xl">Add a user</CardTitle>
-                    <div className="flex-1" />
-                    <Badge variant="outline">Argon2id</Badge>
                 </div>
                 <CardDescription>
                     Their own secret, their own key. Notes they write here are unreadable to the
@@ -402,23 +399,34 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
                 {busy && (
                     <p className="text-muted-foreground text-center text-xs">
                         <Loader2 className="mr-1 inline size-3 animate-spin" />
-                        Deriving key with Argon2id…
+                        Deriving key…
                     </p>
                 )}
 
-                {/* The honest bit. A green "strong" badge would be a lie for a
-                    4-digit PIN, so show the actual expected cracking time. */}
-                {secret.length >= 4 && (
-                    <Alert>
+                {/* Fixed height so the keypad never shifts under a tapping
+                    finger, and no cracking-time estimate: any number here would
+                    rest on assumptions about the attacker we cannot make. Only a
+                    checkable fact about the PIN, plus what actually helps. */}
+                <div className="min-h-[5rem]">
+                    <Alert variant={isCommonPin(secret) ? 'destructive' : 'default'}>
                         <AlertDescription className="text-xs">
-                            A stolen device could try every combination of this secret in about{' '}
-                            <strong>{estimateCrackTime(secret)}</strong>. Because synced notes stay
-                            recoverable from the server, a short PIN mainly risks whatever has not
-                            uploaded yet — but biometric unlock is stronger and can be added after
-                            signing in.
+                            {isCommonPin(secret) ? (
+                                <>
+                                    <strong>{secret}</strong> is one of the most frequently chosen
+                                    PINs, so it would be among the first an attacker tries. Pick
+                                    something less common.
+                                </>
+                            ) : (
+                                <>
+                                    A short PIN protects this device&rsquo;s local cache, not the
+                                    dataset — synced notes stay recoverable from the server, and
+                                    unsynced ones are what a stolen device puts at risk. Biometric
+                                    unlock and a short auto-lock help far more than PIN length.
+                                </>
+                            )}
                         </AlertDescription>
                     </Alert>
-                )}
+                </div>
 
                 {error && (
                     <Alert variant="destructive">

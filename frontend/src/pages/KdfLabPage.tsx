@@ -215,9 +215,10 @@ export function KdfLabPage() {
                     <p>
                         <strong className="text-foreground">Argon2id forces each guess to allocate
                         memory.</strong>{' '}
-                        At 64&nbsp;MiB per guess, a card with 16&nbsp;GB fits a few hundred parallel
-                        attempts rather than tens of thousands — cutting the attacker&rsquo;s
-                        advantage by orders of magnitude for the same user-visible delay.
+                        At 128&nbsp;MiB per guess, a card with 16&nbsp;GB fits barely a hundred
+                        parallel attempts rather than tens of thousands — cutting the
+                        attacker&rsquo;s advantage by orders of magnitude for the same
+                        user-visible delay.
                     </p>
                     <p>
                         <strong className="text-foreground">It only matters for weak

@@ -64,10 +64,12 @@ ciphertext, a salt, and a wrapped key. Nothing else.
 server holds readable records, so anyone with a valid API token can fetch them without the
 PIN. The token is memory-only by default for exactly this reason.
 
-⚠️ **A 4-digit PIN is ~10,000 guesses.** At roughly 130 ms per Argon2id evaluation, a thief
-with the device exhausts that in under half an hour. The PIN protects the device's local
-cache, not the dataset. Biometric unlock is materially stronger, because the authenticator
-rate-limits in hardware — something a browser cannot do.
+⚠️ **A short PIN is weak, and the app will not pretend otherwise.** How long one survives
+an offline attack depends on the attacker's hardware and on how predictable the PIN is —
+neither of which the app can know, so it shows no cracking-time estimate. It flags only a
+checkable fact: whether the PIN appears in public "most common" lists. The PIN protects the
+device's local cache, not the dataset. Biometric unlock is materially stronger, because the
+authenticator rate-limits in hardware — something a browser cannot do.
 
 ❌ **Not a compromised running session.** XSS can use the live in-memory key. Anything
 reachable from JavaScript at runtime is reachable by injected JavaScript.
@@ -164,11 +166,9 @@ Listed because a project about honest trade-offs should be honest about itself.
 
 - **PRF/biometric paths are untested in CI.** Chrome's virtual authenticator does not
   implement the PRF extension, so biometric enrolment is verified on real hardware only.
-- **KDF parameters are probably too low** for fast hardware. The KDF Lab measured Argon2id
-  at ~130 ms on an Apple Silicon laptop, below the 250–500 ms target. Benchmark on the
-  weakest device you must support.
-- **No automatic pull.** The outbox drains on its own, but changes made on another device
-  need a manual *Pull from server*.
+- **KDF parameters are tuned to one machine.** Argon2id runs at 128 MiB / 3 passes, measured
+  at ~263 ms on an Apple Silicon laptop. Benchmark on the weakest device you must support —
+  the KDF Lab page exists for this.
 - **Authorship is self-declared** and forgeable. A real integration would derive it from an
   authenticated session server-side.
 - **Metadata is not encrypted** — note ids, timestamps and sync state are readable. That is
