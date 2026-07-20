@@ -1,5 +1,6 @@
 site_name: Lockbox
 site_description: Offline-first PWA with client-side encryption at rest - a learning project
+site_url: https://mortenoh.github.io/lockbox/
 docs_dir: docs
 site_dir: site
 
