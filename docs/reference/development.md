@@ -8,11 +8,13 @@
 ## Make targets
 
 ```bash
-make install         # uv sync --all-extras
+make install         # uv sync --all-groups
 make lint            # ruff format, ruff check --fix, mypy, pyright
 make test            # pytest -q
+make test-e2e        # Playwright browser end-to-end tests
 make coverage        # coverage run + report + xml
 make serve           # uv run lockbox serve --reload  ->  http://127.0.0.1:8000
+make serve-token     # same, but requiring a bearer token (AUTH=token)
 make build-frontend  # pnpm install --frozen-lockfile && pnpm build -> src/lockbox/static
 make lint-frontend   # oxlint over frontend/
 make docs            # serve this documentation with live reload
@@ -45,12 +47,12 @@ so `build-frontend` is only needed after changing something under `frontend/src`
 │   ├── templates/sw.js   # service worker (Jinja template)
 │   └── static/           # Vite build output — do not edit by hand
 ├── frontend/             # React 19 + TS + Vite + Tailwind v4 + shadcn/ui
-│   └── src/
-│       ├── lib/          # crypto.ts, db.ts, sync.ts — the interesting parts
-│       ├── pages/        # Notes, KDF Lab, Sync Modes, At Rest, Security
-│       ├── components/   # AppLayout (sidebar shell), note UI, shadcn primitives
-│       ├── hooks/        # use-notes, use-sync, use-auto-lock, …
-│       └── e2e/          # Playwright browser tests
+│   ├── src/
+│   │   ├── lib/          # crypto.ts, db.ts, sync.ts + *.test.ts — the interesting parts
+│   │   ├── pages/        # Notes, KDF Lab, Sync Modes, At Rest, Security
+│   │   ├── components/   # AppLayout (sidebar shell), note UI, shadcn primitives
+│   │   └── hooks/        # use-notes, use-sync, use-auto-lock, …
+│   └── e2e/              # Playwright browser tests
 ├── tests/                # pytest — backend (36)
 ├── docs/                 # this site
 ├── data/notes.json       # server-side encrypted store (gitignored)
@@ -159,18 +161,47 @@ there by hand.
 
 ```bash
 make test       # pytest -q  (backend, 36)
-make test-e2e   # Playwright against a real browser (45+)
+make test-e2e   # Playwright against a real browser (48)
 make coverage   # branch coverage, terminal + coverage.xml
+
+cd frontend && pnpm test   # Vitest unit layer (42: crypto + sync + encoding)
 ```
 
-!!! info "Browser e2e covers the headline claims; unit tests for crypto/sync are still open"
+!!! info "Two test layers: fast Vitest units and real-browser Playwright e2e"
     Playwright runs against real Web Crypto, IndexedDB, and the service worker — create
     vault, offline queue, both sync modes, multi-user isolation, recovery from a bricked
     client, and more. That is where most of the project’s difficulty lives, and those paths
     are no longer manual-only.
 
-    What is still missing is a fast **unit** layer (Vitest) for pure crypto helpers and the
-    sync drain state machine. See the [Roadmap](../context/roadmap.md).
+    The fast **unit** layer now exists too: a Vitest suite (**42** tests across
+    `src/lib/crypto.test.ts`, `src/lib/sync.test.ts` and `src/lib/encoding.test.ts`) that
+    runs in well under a second. The sync suite covers HTTP classification, outbox-vs-remote
+    reconciliation, and the drain state machine (re-entrancy, FIFO-stop-on-transient,
+    park-and-continue, auth handling, mode routing, locked-vault blocking, and
+    drain-before-pull ordering). Run it with `cd frontend && pnpm test`.
+
+## Continuous integration
+
+Three GitHub Actions workflows run on every push to `main` and every pull request.
+
+| Workflow | What it does |
+| --- | --- |
+| `.github/workflows/ci.yml` | Backend job: `ruff format --check`, `ruff check`, `mypy`, `pyright`, `pytest`. Frontend job: `oxlint`, `tsc --noEmit`, Vitest. E2e job: Playwright, which needs both toolchains because its `webServer` boots the backend via `uv run lockbox serve`. It mirrors `make lint`/`make test` in check mode — CI only verifies, it never formats or autofixes the tree it is judging. |
+| `.github/workflows/frontend-bundle.yml` | Rebuilds the frontend and fails if the committed `src/lockbox/static` bundle does not byte-match the fresh build. |
+| `.github/workflows/docs.yml` | Builds this MkDocs site and deploys it to GitHub Pages. |
+
+!!! warning "The committed bundle is serving code — rebuild it or your change ships as a no-op"
+    The built frontend is committed into `src/lockbox/static` and served from there, so
+    editing anything under `frontend/src` does **nothing** until `make build-frontend`
+    regenerates the bundle. `frontend-bundle.yml` exists to catch exactly that: the Vite
+    build is deterministic, so CI rebuilds and diffs against the committed output, failing if
+    they differ (or if the rebuild produced new hashed assets that were never committed). If
+    it fails, run `make build-frontend` and commit the result.
+
+!!! info "Docs publish automatically"
+    `docs.yml` deploys to <https://mortenoh.github.io/lockbox/> on any change to `docs/` or
+    `mkdocs.yml`. The `site/` directory stays gitignored — Pages is fed from the workflow
+    artifact, never from a branch.
 
 ## Testing offline behaviour
 

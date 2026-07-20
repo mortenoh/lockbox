@@ -60,8 +60,10 @@ Uploading readable data means **decrypting at the moment of upload**, which mean
 ## What it does
 
 - Create a vault with a passphrase (Argon2id), unlock it to read notes.
+- Support multiple users on one device — each with their own passphrase and key.
 - Write notes while completely offline (kill the server process — it still works).
-- Queue every write in an outbox, drained automatically when the server comes back.
+- Queue every write in an outbox and sync automatically when the server comes back: the
+  outbox drains, then remote changes are pulled (drain-then-pull), on each trigger.
 - Store nothing but ciphertext in IndexedDB, always.
 - Sync in one of two selectable modes: **plaintext** (default, DHIS2-realistic) or
   **encrypted** (demonstration).
@@ -95,7 +97,7 @@ The app is a multi-page shell with a collapsible left sidebar. Each page isolate
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.13.
 
 ```bash
-make install          # uv sync --all-extras
+make install          # uv sync --all-groups
 make serve            # http://127.0.0.1:8000
 ```
 
@@ -167,7 +169,7 @@ are three modules in `frontend/src/lib/`:
 | --- | --- |
 | `crypto.ts` | Envelope encryption over Web Crypto: Argon2id/PBKDF2 KEK derivation, DEK wrap/unwrap, record encrypt/decrypt, KDF benchmarking |
 | `db.ts` | IndexedDB: the `vault`, `notes` and `outbox` object stores |
-| `sync.ts` | The outbox drain loop, the two sync modes, reachability probing, backoff, triggers |
+| `sync.ts` | The outbox drain loop, the pull and outbox reconcile pass, the two sync modes, reachability probing, backoff, triggers |
 
 ## Where to go next
 

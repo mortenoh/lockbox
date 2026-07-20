@@ -13,7 +13,11 @@ worse than none.
 
 | Item | Notes |
 | --- | --- |
-| **Automated tests for the TypeScript layer** | 45 Playwright tests against a real browser rather than jsdom with a fake IndexedDB. Several are named regressions for bugs that shipped. |
+| **Automated tests for the TypeScript layer** | 48 Playwright tests against a real browser rather than jsdom with a fake IndexedDB. Several are named regressions for bugs that shipped. |
+| **Vitest unit layer for sync + crypto** | 42 fast unit tests (`crypto.test.ts`, `sync.test.ts`, `encoding.test.ts`) covering the drain state machine, HTTP classification, outbox reconcile, and the crypto round-trip helpers. |
+| **CI and docs publishing** | Three GitHub Actions workflows: lint/type/test/e2e (`ci.yml`), a committed-bundle freshness guard (`frontend-bundle.yml`), and MkDocs to GitHub Pages (`docs.yml`). |
+| **Drain-then-pull sync cycle** | Every automatic trigger runs `runSyncCycle`: drain the outbox, then pull. Pull reconciles against the outbox, closing the race where a pull could overwrite unsent local work. |
+| **Refined HTTP error classification** | 401/403 handled as auth (drain stops, token cleared, entries stay pending); 408/429 treated as transient, honouring `Retry-After`. |
 | **Argon2id as the default KDF** | Replaced PBKDF2, which is retained for legacy vaults and as the comparison arm in the KDF Lab. |
 | **KDF parameters raised, then calibrated** | 64 → 128 MiB as the ceiling, chosen from six measured candidates; vault creation now calibrates down a ladder (to OWASP's 19 MiB floor) on slow or low-RAM devices. |
 | **WebAuthn PRF unlock** | The same DEK wrapped a second time under authenticator-derived key material. Verified on real hardware only — see below. |
@@ -29,22 +33,25 @@ worse than none.
 
 ### Fast unit tests for crypto and sync
 
-**Effort: M · E2e is done; the remaining gap is a fast unit layer.**
+**Done — a Vitest suite now runs in well under a second.**
 
-Playwright covers the headline claims against a real browser (vault lifecycle, offline
-queue, both sync modes, multi-user isolation, recovery). The Python backend has
-**36** tests. What is still missing is a **Vitest** suite that runs in seconds for the pure
-logic:
+The **Vitest** layer exists: **42** tests across `frontend/src/lib/crypto.test.ts`,
+`sync.test.ts` and `encoding.test.ts`, alongside the 48 Playwright e2e tests and the
+**36** backend pytest tests.
 
-- **Crypto unit tests** (real Web Crypto in Node or a browser-like env): round-trip
-  encrypt/decrypt; wrong passphrase rejected; passphrase change preserves note readability;
-  **a PBKDF2 vault migrates to Argon2id and still opens**; **`vaultKdf()` defaults a
-  legacy record to PBKDF2**; tampered ciphertext throws; IVs are unique; session key is
-  non-extractable.
-- **Sync unit tests** with a mocked `fetch`: FIFO ordering; transient failure stops the
-  drain; permanent failure parks and continues; backoff grows and clamps at 60s; re-entry
-  guard; **mode routing to `/api/plain-notes` vs `/api/notes`**; **locked vault blocks
-  plaintext drain only**.
+- **Crypto** (`crypto.test.ts`): round-trip encrypt/decrypt with a fresh IV per call, wrong
+  passphrase rejected, passphrase change preserves note readability, a PBKDF2 vault migrates
+  to Argon2id and still opens, `vaultKdf()` defaults a legacy record to PBKDF2, tampered
+  ciphertext throws, and the calibration ladder (`pickArgon2idParams` / `calibrateKdfParams`).
+- **Sync** (`sync.test.ts`): HTTP classification (401/403 auth, 408/429 transient honouring
+  `Retry-After`); `decideRemoteApply` reconciliation; and the drain state machine —
+  re-entrancy, stop-on-first-transient (FIFO), park-and-continue on a permanent 422,
+  mid-drain auth handling, mode routing to `/api/notes` vs `/api/plain-notes`, locked-vault
+  blocking of the plaintext drain, pull reconcile, and drain-before-pull ordering.
+
+Two items from the original wishlist remain genuinely uncovered by the unit layer: the
+backoff growth-and-clamp-at-60s curve, and an explicit assertion that the session key is
+non-extractable. Neither is high value — both are exercised indirectly elsewhere.
 
 ### Content-Security-Policy hardening
 
@@ -79,15 +86,14 @@ migration already uses.
 
 ### WebAuthn PRF unlock
 
-**Effort: M–L**
+**Done — verified on real hardware only.**
 
-Optional unlock via Touch ID / Windows Hello / passkey, using the WebAuthn PRF extension
-to produce stable key material for a second KEK over the same DEK. Passphrase or recovery
-code stays the recoverable root. Feature-detect and degrade silently — Windows Hello PRF
-support is still weak. See [Trade-offs: unlock UX](trade-offs.md#unlock-ux).
-
-Doubly worth it now: a fast biometric unlock takes most of the pain out of the
-unlocked-vault requirement that plaintext sync imposes.
+Optional unlock via Touch ID / Windows Hello / passkey is implemented, using the WebAuthn
+PRF extension to derive stable key material for a second KEK that wraps the same DEK — a
+second envelope stored as the vault's `prf` field. The passphrase stays the recoverable
+root. The path feature-detects and degrades silently where PRF is unavailable (Windows
+Hello support remains weak), which is also why it is exercised on real hardware rather than
+in CI. See [Trade-offs: unlock UX](trade-offs.md#unlock-ux).
 
 ### Re-benchmark KDF parameters on the weakest target device
 
@@ -128,11 +134,13 @@ failure queue considerably more useful than it was under opaque ciphertext.
 
 ### Refine error classification
 
-**Effort: S**
+**Done.**
 
-The current rule is a plain 4xx/5xx split. Retry **408** and **429** (honouring
-`Retry-After`), and treat **401/403** as "refresh credentials and retry" once there is
-authentication. See [Offline Sync](../design/offline-sync.md#error-classification).
+`classify()` replaces the plain 4xx/5xx split. **408** and **429** are transient and honour
+`Retry-After`; other 4xx remain permanent and 5xx transient. **401/403** are classified as
+auth: the drain stops, the stored token is cleared, and the affected entries stay pending
+rather than being parked, so they retry once credentials are refreshed. See
+[Offline Sync](../design/offline-sync.md#error-classification).
 
 ### Incremental pull
 
@@ -226,8 +234,9 @@ anyway.
 A shared bearer token (`--auth token`) is enough to stop a public URL being open, and is
 implemented. What is still missing is **per-user** identity: sessions, org-unit scoping,
 rate limiting, and a database instead of a JSON file. The plaintext store holds readable
-health-shaped data, so a stolen shared token still reads everything. Real auth also
-changes the error-classification story (401/403 become retryable-after-refresh).
+health-shaped data, so a stolen shared token still reads everything. The client already
+classifies 401/403 as auth (stop, clear token, keep entries pending); real per-user auth is
+what gives that path teeth, turning it into a genuine refresh-credentials-and-retry loop.
 
 For a genuine DHIS2 integration this item is mostly moot — DHIS2 already provides all of
 it, and the right move is to use it rather than reimplement it. See
@@ -284,6 +293,12 @@ increasing order of cost: server-assigned monotonic versions or hybrid logical c
 per-field LWW; surfacing conflicts to the user; a CRDT. See
 [Offline Sync](../design/offline-sync.md#conflict-resolution).
 
+Single-device pull-vs-outbox races are already handled: the pull reconcile pass
+(`decideRemoteApply`) drops a queued put superseded by a remote tombstone and refuses to
+resurrect a note whose local delete is still pending, so a pull never overwrites unsent
+local work. Cross-device LWW remains exactly as described above — reconcile settles one
+device's own queue against the server, not two devices' edits against each other.
+
 Note the asymmetry the sync modes introduce: in plaintext mode the server *can* merge, run
 validation rules and apply domain logic — which is exactly what DHIS2 does, and a large
 part of why the mode exists. In encrypted mode it cannot, and all resolution must be
@@ -329,19 +344,19 @@ persistence was denied — that combination is how a day's fieldwork disappears.
 | --- | --- | --- | --- |
 | Argon2id KDF (default, params in vault, migration path) | — | M | ✅ **done** |
 | Two sync modes, plaintext default, two backend APIs | — | M | ✅ **done** |
-| Playwright e2e (browser, 45+) | — | M | ✅ **done** |
+| Playwright e2e (browser, 48) | — | M | ✅ **done** |
 | Auto-lock on inactivity | — | S | ✅ **done** |
 | WebAuthn PRF unlock | — | M–L | ✅ **done** (real hardware only in CI terms) |
 | Multiple users per device | — | M | ✅ **done** |
 | Shared bearer token (`none` / `token`) | — | S | ✅ **done** (not per-user) |
 | KDF params raised 64 → 128 MiB | — | S | ✅ **done**, with per-device calibration down a ladder |
-| Vitest unit tests for crypto + sync | 1 | M | partial — crypto + encoding covered; sync remains |
+| Vitest unit tests for crypto + sync | 1 | M | ✅ **done** (42 tests) |
 | CSP hardening | 1 | S | ❌ |
 | Recovery codes | 1 | M | ❌ |
 | Re-benchmark KDF on weakest field device | 2 | S | ⚠️ laptop done |
 | Background Sync (encrypted mode only) | 2 | S–M | ❌ |
 | Conflict / failure UI | 2 | M | ⚠️ minimal |
-| Refined error classification (408/429/401) | 2 | S | ⚠️ 4xx/5xx split only |
+| Refined error classification (408/429/401) | 2 | S | ✅ **done** |
 | Incremental pull | 2 | M | ❌ full-table pull |
 | Metadata as AES-GCM AAD | 2 | S | ❌ |
 | Per-user backend authentication | 3 | L | ❌ shared token only |

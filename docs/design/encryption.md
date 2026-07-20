@@ -55,6 +55,8 @@ inert bytes.
 
 ```typescript
 export interface VaultRecord {
+    /** Stable local id. One vault per user on this device. */
+    id: string
     /** Random per-vault salt (base64url). Stops precomputed-table attacks. */
     salt: string
     /** IV used when wrapping the DEK (base64url). */
@@ -64,6 +66,20 @@ export interface VaultRecord {
     kdf: KdfId          // 'argon2id' | 'pbkdf2'
     params: KdfParams   // { iterations, memorySize?, parallelism? }
     createdAt: number
+    /**
+     * Optional second envelope over the same DEK, opened by an authenticator
+     * instead of the PIN. Adding it never touches a single note.
+     */
+    prf?: PrfEnvelope
+    /**
+     * Display name for whoever owns this device's vault.
+     *
+     * Deliberately NOT encrypted: it is not a secret, it has to be readable
+     * before unlock to label the lock screen, and the same name is published to
+     * the server with every note anyway. In a real DHIS2 app this would come
+     * from the authenticated session instead of being self-declared.
+     */
+    owner: string
 }
 ```
 
