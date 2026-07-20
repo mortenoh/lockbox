@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Morten Hansen
 // SPDX-License-Identifier: BSD-3-Clause
 
+import { useEffect } from 'react'
+
 import { Delete, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -58,6 +60,35 @@ export function PinPad({
 }: PinPadProps) {
     const press = (digit: string) =>
         onChange((previous) => (previous.length >= maxLength ? previous : previous + digit))
+
+    // Half the field hardware is old laptops, where clicking each digit with a
+    // trackpad is the slowest possible entry. Listening on the document rather
+    // than the pad means it works without first clicking into anything - but
+    // never while the user is typing in a real field (the name input here, or
+    // a dialog's search box), which keeps digits out of the PIN when they were
+    // meant for the field.
+    useEffect(() => {
+        const handleKey = (event: KeyboardEvent) => {
+            if (disabled) return
+            if (event.metaKey || event.ctrlKey || event.altKey) return
+            const target = event.target as HTMLElement | null
+            if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+
+            if (/^[0-9]$/.test(event.key)) {
+                event.preventDefault()
+                press(event.key)
+            } else if (event.key === 'Backspace') {
+                event.preventDefault()
+                onChange((previous) => previous.slice(0, -1))
+            } else if (event.key === 'Enter') {
+                if (submitDisabled || value.length < 4) return
+                event.preventDefault()
+                onSubmit()
+            }
+        }
+        document.addEventListener('keydown', handleKey)
+        return () => document.removeEventListener('keydown', handleKey)
+    })
 
     return (
         // cursor-progress rather than cursor-wait: the app is still responsive,

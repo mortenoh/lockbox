@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Morten Hansen
 // SPDX-License-Identifier: BSD-3-Clause
 
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
     Database,
@@ -16,6 +16,7 @@ import {
     UserRoundX,
 } from 'lucide-react'
 
+import { CommandPalette } from '@/components/CommandPalette'
 import { StatusMenu } from '@/components/StatusMenu'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { Badge } from '@/components/ui/badge'
@@ -55,6 +56,8 @@ interface AppLayoutProps {
     onLock: () => void
     /** Drop the key and forget the user, returning to the picker. */
     onSwitchUser: () => void
+    /** Drain then fetch, so the palette can trigger the same cycle as the Notes page button. */
+    onPull: () => void | Promise<void>
     children: ReactNode
 }
 
@@ -64,6 +67,7 @@ export function AppLayout({
     owner,
     onLock,
     onSwitchUser,
+    onPull,
     children,
 }: AppLayoutProps) {
     const { collapsed, toggle } = useSidebar()
@@ -71,6 +75,24 @@ export function AppLayout({
     const { pathname } = useLocation()
     const current = pathname.replace(/^\//, '')
     const title = NAV_ITEMS.find((item) => item.path === current)?.label ?? 'Lockbox'
+
+    // The strip scrolls, but a cut-off label was the only hint that it does.
+    // The fade is the affordance - and it must vanish once the user reaches
+    // the end, or the last item would look permanently grayed out.
+    const mobileNavRef = useRef<HTMLElement>(null)
+    const [navOverflows, setNavOverflows] = useState(false)
+    useEffect(() => {
+        const el = mobileNavRef.current
+        if (!el) return
+        const update = () => setNavOverflows(el.scrollWidth - el.clientWidth - el.scrollLeft > 4)
+        update()
+        el.addEventListener('scroll', update, { passive: true })
+        window.addEventListener('resize', update)
+        return () => {
+            el.removeEventListener('scroll', update)
+            window.removeEventListener('resize', update)
+        }
+    }, [])
 
     return (
         <div className="flex min-h-svh">
@@ -221,25 +243,44 @@ export function AppLayout({
                         </Tooltip>
                     </div>
 
-                    {/* Sidebar is hidden below md, so nav moves inline. */}
-                    <nav className="flex gap-1 overflow-x-auto border-t px-4 py-2 md:hidden">
-                        {NAV_ITEMS.map((item) => (
-                            <Button
-                                key={item.path}
-                                asChild
-                                variant={item.path === current ? 'secondary' : 'ghost'}
-                                size="sm"
-                            >
-                                <NavLink to={item.path === '' ? '/' : `/${item.path}`}>
-                                    {item.label}
-                                </NavLink>
-                            </Button>
-                        ))}
-                    </nav>
+                    {/* Sidebar is hidden below md, so nav moves inline. The
+                        border lives on the wrapper because the fade mask on the
+                        nav itself would eat the border's right end. */}
+                    <div className="border-t md:hidden">
+                        <nav
+                            ref={mobileNavRef}
+                            className={cn(
+                                // Scrollbar hidden on purpose: the fade is the
+                                // scroll affordance, and the bar under a strip
+                                // this small reads as clutter.
+                                'flex gap-1 overflow-x-auto px-4 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+                                navOverflows &&
+                                    '[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)]',
+                            )}
+                        >
+                            {NAV_ITEMS.map((item) => (
+                                <Button
+                                    key={item.path}
+                                    asChild
+                                    variant={item.path === current ? 'secondary' : 'ghost'}
+                                    size="sm"
+                                    className={cn(
+                                        item.path === current && 'border-border font-semibold',
+                                    )}
+                                >
+                                    <NavLink to={item.path === '' ? '/' : `/${item.path}`}>
+                                        {item.label}
+                                    </NavLink>
+                                </Button>
+                            ))}
+                        </nav>
+                    </div>
                 </header>
 
                 <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 md:px-8">{children}</main>
             </div>
+
+            <CommandPalette onLock={onLock} onSwitchUser={onSwitchUser} onPull={onPull} />
         </div>
     )
 }

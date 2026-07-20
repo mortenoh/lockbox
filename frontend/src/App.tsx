@@ -150,6 +150,7 @@ export default function App() {
             owner={vault.owner}
             onLock={handleLock}
             onSwitchUser={handleSwitchUser}
+            onPull={handlePull}
         >
             {/* Routed rather than switched on state, so a reload returns to the
                 page you were on. The vault still has to be unlocked again - the

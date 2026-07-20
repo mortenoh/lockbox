@@ -9,7 +9,11 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        default:
+          // Disabled is muted-on-muted rather than the base opacity-50: a
+          // half-transparent primary still reads as an enabled gray button,
+          // and in dark mode it was the brightest element on the screen.
+          "bg-primary text-primary-foreground hover:bg-primary/80 disabled:opacity-100 disabled:bg-muted disabled:text-muted-foreground",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
