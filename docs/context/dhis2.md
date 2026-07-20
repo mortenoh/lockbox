@@ -140,7 +140,7 @@ shell, revisioned manifest, offline app loading, and an update flow. It is the s
 machinery discussed in [Trade-offs: service worker](trade-offs.md#service-worker), done
 properly and for free.
 
-📖 <https://developers.dhis2.org/docs/app-platform/pwa/>
+Docs: <https://developers.dhis2.org/docs/app-platform/pwa/>
 
 !!! success "Layer 1 (PWA shell): already solved"
     Lockbox's hand-rolled `sw.js` exists for learning. In a DHIS2 app, do not write one —
@@ -173,7 +173,7 @@ Also provided:
 | `useDhis2ConnectionStatus` | Whether the **DHIS2 server** is reachable — a real probe, not `navigator.onLine`. Exactly the distinction Lockbox makes with `/api/info` |
 | `useOnlineStatus` | Lower-level browser online/offline state |
 
-📖 <https://developers.dhis2.org/docs/app-runtime/advanced/offline/>
+Docs: <https://developers.dhis2.org/docs/app-runtime/advanced/offline/>
 
 !!! warning "These offline APIs are flagged experimental"
     The DHIS2 documentation marks the offline features as experimental. Check the current
@@ -249,13 +249,13 @@ storage layer the browser may evict. See [Threat Model](../design/threat-model.m
 
 | Layer | DHIS2 App Platform | What you would still build |
 | --- | --- | --- |
-| **PWA shell** | ✅ `pwa: { enabled: true }`, Workbox-based | Nothing |
-| **Offline reads** | ✅ `CacheableSection`, `useCacheableSection` | Decide which subtrees are cacheable |
-| **Connection status** | ✅ `useDhis2ConnectionStatus` | Nothing — it already probes the server properly |
-| **Server-side access control** | ✅ sharing, roles, org-unit scoping | Configure it correctly — it is the real confidentiality control |
-| **Offline writes** | ❌ none | The whole outbox: queue, idempotency, error classification, backoff, triggers, failure UI |
-| **Encryption at rest on the device** | ❌ none | The whole envelope: vault, KDF, wrap/unwrap, lock/unlock UX, encrypted record boundary |
-| **Conflict resolution** | ⚠️ import summaries only | Domain-specific; DHIS2's import summaries give you the raw material |
+| **PWA shell** | yes: `pwa: { enabled: true }`, Workbox-based | Nothing |
+| **Offline reads** | yes: `CacheableSection`, `useCacheableSection` | Decide which subtrees are cacheable |
+| **Connection status** | yes: `useDhis2ConnectionStatus` | Nothing — it already probes the server properly |
+| **Server-side access control** | yes: sharing, roles, org-unit scoping | Configure it correctly — it is the real confidentiality control |
+| **Offline writes** | none | The whole outbox: queue, idempotency, error classification, backoff, triggers, failure UI |
+| **Encryption at rest on the device** | none | The whole envelope: vault, KDF, wrap/unwrap, lock/unlock UX, encrypted record boundary |
+| **Conflict resolution** | partial: import summaries only | Domain-specific; DHIS2's import summaries give you the raw material |
 
 ```mermaid
 flowchart TB

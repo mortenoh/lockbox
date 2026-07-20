@@ -342,29 +342,29 @@ persistence was denied — that combination is how a day's fieldwork disappears.
 
 | Item | Priority | Effort | Status |
 | --- | --- | --- | --- |
-| Argon2id KDF (default, params in vault, migration path) | — | M | ✅ **done** |
-| Two sync modes, plaintext default, two backend APIs | — | M | ✅ **done** |
-| Playwright e2e (browser, 48) | — | M | ✅ **done** |
-| Auto-lock on inactivity | — | S | ✅ **done** |
-| WebAuthn PRF unlock | — | M–L | ✅ **done** (real hardware only in CI terms) |
-| Multiple users per device | — | M | ✅ **done** |
-| Shared bearer token (`none` / `token`) | — | S | ✅ **done** (not per-user) |
-| KDF params raised 64 → 128 MiB | — | S | ✅ **done**, with per-device calibration down a ladder |
-| Vitest unit tests for crypto + sync | 1 | M | ✅ **done** (42 tests) |
-| CSP hardening | 1 | S | ❌ |
-| Recovery codes | 1 | M | ❌ |
-| Re-benchmark KDF on weakest field device | 2 | S | ⚠️ laptop done |
-| Background Sync (encrypted mode only) | 2 | S–M | ❌ |
-| Conflict / failure UI | 2 | M | ⚠️ minimal |
-| Refined error classification (408/429/401) | 2 | S | ✅ **done** |
-| Incremental pull | 2 | M | ❌ full-table pull |
-| Metadata as AES-GCM AAD | 2 | S | ❌ |
-| Per-user backend authentication | 3 | L | ❌ shared token only |
-| Blind indexing / encrypted search | 3 | L | ❌ |
-| Multi-device key sharing | 3 | L | ❌ |
-| Per-record DEKs | 3 | L | ❌ |
-| Key rotation | 3 | M–L | ❌ |
-| Multi-device conflict resolution | 3 | L | ⚠️ LWW only |
-| Move to Dexie | 4 | M | ❌ raw IndexedDB |
-| `vite-plugin-pwa` | 4 | S | ❌ hand-rolled |
-| Storage pressure handling | 4 | S | ⚠️ reported, not warned |
+| Argon2id KDF (default, params in vault, migration path) | — | M | **done** |
+| Two sync modes, plaintext default, two backend APIs | — | M | **done** |
+| Playwright e2e (browser, 48) | — | M | **done** |
+| Auto-lock on inactivity | — | S | **done** |
+| WebAuthn PRF unlock | — | M–L | **done** (real hardware only in CI terms) |
+| Multiple users per device | — | M | **done** |
+| Shared bearer token (`none` / `token`) | — | S | **done** (not per-user) |
+| KDF params raised 64 → 128 MiB | — | S | **done**, with per-device calibration down a ladder |
+| Vitest unit tests for crypto + sync | 1 | M | **done** (42 tests) |
+| CSP hardening | 1 | S | no |
+| Recovery codes | 1 | M | no |
+| Re-benchmark KDF on weakest field device | 2 | S | partial: laptop done |
+| Background Sync (encrypted mode only) | 2 | S–M | no |
+| Conflict / failure UI | 2 | M | partial: minimal |
+| Refined error classification (408/429/401) | 2 | S | **done** |
+| Incremental pull | 2 | M | no: full-table pull |
+| Metadata as AES-GCM AAD | 2 | S | no |
+| Per-user backend authentication | 3 | L | no: shared token only |
+| Blind indexing / encrypted search | 3 | L | no |
+| Multi-device key sharing | 3 | L | no |
+| Per-record DEKs | 3 | L | no |
+| Key rotation | 3 | M–L | no |
+| Multi-device conflict resolution | 3 | L | partial: LWW only |
+| Move to Dexie | 4 | M | no: raw IndexedDB |
+| `vite-plugin-pwa` | 4 | S | no: hand-rolled |
+| Storage pressure handling | 4 | S | partial: reported, not warned |

@@ -34,17 +34,17 @@
  * THREAT MODEL - read this before trusting any of it
  * ============================================================================
  *
- * ✅ Protects: a lost or stolen device. An attacker holding the browser profile
+ * Protects: a lost or stolen device. An attacker holding the browser profile
  *    finds ciphertext, a salt, and a wrapped key. Without the passphrase, that
  *    is all they will ever have.
  *
- * ❌ Does NOT protect: a compromised running page. Once unlocked, the DEK is a
+ * Does NOT protect: a compromised running page. Once unlocked, the DEK is a
  *    live object in this tab's memory. Any injected script (XSS) can use it.
  *    Marking the key non-extractable stops its *bytes* being read, not its
  *    *use* - an attacker can still call decrypt(). This is a real limit of
  *    doing crypto in a web page, not something a better design fixes here.
  *
- * ❌ Not end-to-end encryption between users. See `sync.ts` and the DHIS2 docs:
+ * Not end-to-end encryption between users. See `sync.ts` and the DHIS2 docs:
  *    when the backend must share records between users, the data has to arrive
  *    readable, and this encryption is local-only.
  */

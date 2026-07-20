@@ -57,26 +57,26 @@ visible rather than asserted.
 
 ## Threat model
 
-✅ **A lost or stolen device, for local data.** An attacker with the browser profile finds
-ciphertext, a salt, and a wrapped key. Nothing else.
+**Protected: a lost or stolen device, for local data.** An attacker with the browser profile
+finds ciphertext, a salt, and a wrapped key. Nothing else.
 
-⚠️ **Synced data is only as protected as the server credential.** In plaintext mode the
+**Caveat: synced data is only as protected as the server credential.** In plaintext mode the
 server holds readable records, so anyone with a valid API token can fetch them without the
 PIN. The token is memory-only by default for exactly this reason.
 
-⚠️ **A short PIN is weak, and the app will not pretend otherwise.** How long one survives
+**Caveat: a short PIN is weak, and the app will not pretend otherwise.** How long one survives
 an offline attack depends on the attacker's hardware and on how predictable the PIN is —
 neither of which the app can know, so it shows no cracking-time estimate. It flags only a
 checkable fact: whether the PIN appears in public "most common" lists. The PIN protects the
 device's local cache, not the dataset. Biometric unlock is materially stronger, because the
 authenticator rate-limits in hardware — something a browser cannot do.
 
-❌ **Not a compromised running session.** XSS can use the live in-memory key. Anything
-reachable from JavaScript at runtime is reachable by injected JavaScript.
+**Not protected: a compromised running session.** XSS can use the live in-memory key.
+Anything reachable from JavaScript at runtime is reachable by injected JavaScript.
 
-❌ **Not end-to-end encryption**, and not protection from the server operator. By design.
+**Not end-to-end encryption**, and not protection from the server operator. By design.
 
-❌ **No PIN recovery.** Forgetting it makes local data permanently unreadable. Synced
+**No PIN recovery.** Forgetting it makes local data permanently unreadable. Synced
 records remain recoverable by signing in again and pulling.
 
 ## What it demonstrates

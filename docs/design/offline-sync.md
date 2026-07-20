@@ -21,11 +21,11 @@ export const DEFAULT_SYNC_MODE: SyncMode = 'plaintext'
 | What is uploaded | Decrypted `{title, body}` | The stored ciphertext, untouched |
 | Endpoint family | `/api/plain-notes` | `/api/notes` |
 | Server-side file | `data/notes.plain.json` | `data/notes.json` |
-| Server can validate / aggregate / share | ✅ | ❌ |
-| Readable by other authorised users | ✅ | ❌ — only the one passphrase opens it |
-| **Sync works while locked** | ❌ **requires an unlocked vault** | ✅ |
+| Server can validate / aggregate / share | yes | no |
+| Readable by other authorised users | yes | no — only the one passphrase opens it |
+| **Sync works while locked** | no: **requires an unlocked vault** | yes |
 | Confidentiality on the server | Platform's responsibility (access control, TLS, server-side encryption at rest) | Structural — the server has no key |
-| Suits the target (DHIS2) | ✅ | ❌ |
+| Suits the target (DHIS2) | yes | no |
 
 The mode is persisted in `localStorage` under `lockbox.syncMode` and switched with
 `setMode()`, which also forces an immediate drain. The **Sync Modes** page exposes this and

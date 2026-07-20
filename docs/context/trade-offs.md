@@ -14,16 +14,16 @@ Lockbox implements **both**, selectable at runtime, with **plaintext as the defa
 | | **Plaintext sync** (default) | **Encrypted sync** (demonstration) |
 | --- | --- | --- |
 | What the server receives | Readable `{title, body}` | Opaque ciphertext |
-| Server-side validation | ✅ | ❌ |
-| Aggregation, analytics, indicators | ✅ | ❌ |
-| Readable by other authorised users | ✅ | ❌ — one passphrase, one reader |
-| Platform access control still meaningful | ✅ | ❌ — replaced by "who typed the passphrase" |
-| Server operator can read the data | ✅ | ❌ |
-| Sync while the vault is locked | ❌ | ✅ |
-| Background Sync API could ever help | ❌ — a service worker has no DEK | ✅ |
-| Client-side integrity check on what the server returns | ❌ | ✅ GCM auth tag |
+| Server-side validation | yes | no |
+| Aggregation, analytics, indicators | yes | no |
+| Readable by other authorised users | yes | no — one passphrase, one reader |
+| Platform access control still meaningful | yes | no — replaced by "who typed the passphrase" |
+| Server operator can read the data | yes | no |
+| Sync while the vault is locked | no | yes |
+| Background Sync API could ever help | no — a service worker has no DEK | yes |
+| Client-side integrity check on what the server returns | no | yes: GCM auth tag |
 | Blast radius of a forgotten passphrase | The unsynced queue | Everything |
-| Fits DHIS2 | ✅ | ❌ |
+| Fits DHIS2 | yes | no |
 
 **The argument in one paragraph:** every user of the PWA picks their own passphrase. There
 is no organisational key and no key distribution. Encrypting uploads under a per-user key
@@ -263,12 +263,12 @@ SQLite-WASM being the practical route on the web.
 
 | | Field-level | Whole-database |
 | --- | --- | --- |
-| Metadata protected | ❌ ids, timestamps, counts visible | ✅ everything |
-| Query/sort while locked | ✅ | ❌ nothing is readable |
-| Queue readable while locked | ✅ ciphertext moves as opaque bytes | ❌ cannot even read the queue |
-| Search by content | ❌ requires decrypting everything | ✅ normal SQL over the decrypted DB |
+| Metadata protected | no: ids, timestamps, counts visible | yes: everything |
+| Query/sort while locked | yes | no: nothing is readable |
+| Queue readable while locked | yes: ciphertext moves as opaque bytes | no: cannot even read the queue |
+| Search by content | no: requires decrypting everything | yes: normal SQL over the decrypted DB |
 | Dependency weight | 0 (Web Crypto) | ~1 MB WASM |
-| Partial decryption | ✅ decrypt only what is displayed | ❌ all-or-nothing |
+| Partial decryption | yes: decrypt only what is displayed | no: all-or-nothing |
 
 The trade is fundamentally about **indices**. An index is a data structure whose whole job
 is to reveal ordering and equality relationships over values. Encrypt a value properly and
