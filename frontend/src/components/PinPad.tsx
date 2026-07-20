@@ -19,6 +19,14 @@ interface PinPadProps {
     disabled?: boolean
     /** Submit button label - this pad is used to both create and unlock. */
     submitLabel?: string
+    /**
+     * Extra reason the form is not submittable yet, beyond PIN length.
+     *
+     * Lets the caller keep the button disabled while its own fields are
+     * incomplete, so an invalid form can never be submitted at all - which is
+     * better than accepting it and answering with an error.
+     */
+    submitDisabled?: boolean
 }
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
@@ -40,6 +48,7 @@ export function PinPad({
     maxLength = 6,
     disabled,
     submitLabel = 'Unlock',
+    submitDisabled = false,
 }: PinPadProps) {
     const press = (digit: string) =>
         onChange((previous) => (previous.length >= maxLength ? previous : previous + digit))
@@ -109,7 +118,7 @@ export function PinPad({
 
             <Button
                 type="button"
-                disabled={disabled || value.length < 4}
+                disabled={disabled || submitDisabled || value.length < 4}
                 onClick={onSubmit}
                 className="w-full"
             >

@@ -117,3 +117,50 @@ test.describe('vault', () => {
         await expect(page.getByRole('button', { name: 'Unlock', exact: true })).toBeVisible()
     })
 })
+
+test.describe('create-form validation', () => {
+    test.beforeEach(async ({ page, request }) => {
+        await clearServer(request)
+        await page.goto('/')
+        await wipeDevice(page)
+    })
+
+    test('an incomplete form cannot be submitted at all', async ({ page }) => {
+        // Better than accepting the submission and answering with an error,
+        // which is what used to happen - and which pushed the keypad down.
+        const submit = page.getByRole('button', { name: 'Create vault' })
+        await expect(submit).toBeDisabled()
+
+        await enterPin(page, '1234')
+        await expect(submit).toBeDisabled() // still no name
+
+        await page.getByLabel('Name').fill('Ward 3 Clinic')
+        await expect(submit).toBeEnabled()
+    })
+
+    test('the keypad never moves as the form is filled in', async ({ page }) => {
+        // Regression: the advisory only rendered past four digits, so the keys
+        // shifted upward under the user's finger mid-entry.
+        const key = page.getByRole('button', { name: '1', exact: true })
+        const top = async () => Math.round((await key.boundingBox())!.y)
+
+        const empty = await top()
+        await enterPin(page, '12')
+        const partial = await top()
+        await page.getByLabel('Name').fill('Ward 3 Clinic')
+        await enterPin(page, '34')
+        const complete = await top()
+
+        expect(Math.abs(partial - empty)).toBeLessThanOrEqual(2)
+        expect(Math.abs(complete - empty)).toBeLessThanOrEqual(2)
+    })
+
+    test('a well-known PIN is called out', async ({ page }) => {
+        await page.getByLabel('Name').fill('Ward 3 Clinic')
+        await enterPin(page, '1111')
+
+        await expect(page.getByText(/one of the most frequently chosen PINs/)).toBeVisible()
+        // Still allowed - it is advice, not a policy.
+        await expect(page.getByRole('button', { name: 'Create vault' })).toBeEnabled()
+    })
+})

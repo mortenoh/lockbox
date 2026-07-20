@@ -339,15 +339,17 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
     const [error, setError] = useState<string | null>(null)
     const [busy, setBusy] = useState(false)
 
+    // The submit button is disabled until both fields are valid, so `create`
+    // can only ever run on a complete form. Nothing here re-checks them.
+    const trimmedOwner = owner.trim()
+    const isComplete = trimmedOwner.length > 0 && secret.length >= 4
+
     async function create() {
         setError(null)
 
-        if (!owner.trim()) return setError('A name is required.')
-        if (secret.length < 4) return setError('Use at least 4 digits.')
-
         setBusy(true)
         try {
-            const vault = await createVault(secret, owner.trim(), DEFAULT_KDF)
+            const vault = await createVault(secret, trimmedOwner, DEFAULT_KDF)
             await db.putVault(vault)
             await db.requestPersistence()
             onCreated(vault)
@@ -394,6 +396,7 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
                     onSubmit={() => void create()}
                     disabled={busy}
                     submitLabel="Create vault"
+                    submitDisabled={!isComplete}
                 />
 
                 {busy && (
@@ -403,14 +406,24 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
                     </p>
                 )}
 
-                {/* Fixed height so the keypad never shifts under a tapping
-                    finger, and no cracking-time estimate: any number here would
-                    rest on assumptions about the attacker we cannot make. Only a
-                    checkable fact about the PIN, plus what actually helps. */}
+                {/* One fixed-height slot for everything this form has to say:
+                    what is still missing, a warning about the PIN, or a real
+                    failure. Adding a second box on submit is what made the
+                    keypad jump. */}
                 <div className="min-h-[5rem]">
-                    <Alert variant={isCommonPin(secret) ? 'destructive' : 'default'}>
+                    <Alert
+                        variant={error || isCommonPin(secret) ? 'destructive' : 'default'}
+                    >
                         <AlertDescription className="text-xs">
-                            {isCommonPin(secret) ? (
+                            {error ? (
+                                error
+                            ) : !isComplete ? (
+                                <>
+                                    {!trimmedOwner
+                                        ? 'Enter a name to continue.'
+                                        : 'Enter at least four digits.'}
+                                </>
+                            ) : isCommonPin(secret) ? (
                                 <>
                                     <strong>{secret}</strong> is one of the most frequently chosen
                                     PINs, so it would be among the first an attacker tries. Pick
@@ -427,12 +440,6 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
                         </AlertDescription>
                     </Alert>
                 </div>
-
-                {error && (
-                    <Alert variant="destructive">
-                        <AlertDescription>{error}</AlertDescription>
-                    </Alert>
-                )}
 
                 {canCancel && (
                     <Button variant="ghost" size="sm" onClick={onCancel}>
