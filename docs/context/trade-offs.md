@@ -162,9 +162,12 @@ Lockbox uses **raw IndexedDB** — about 220 lines including a hand-rolled promi
 `withStore()` helpers exist purely because raw IndexedDB is event-based; `idb` deletes
 both and changes nothing else.
 
-**On Dexie:** the right answer once the schema grows past a handful of stores. Its
-versioning/migration story in particular is something you do not want to hand-roll — the
-`onupgradeneeded` pattern gets ugly fast at version 4 or 5.
+**On Dexie:** the right answer once the schema grows past a handful of stores, or once
+real users make data-preserving migrations mandatory. Pre-release, Lockbox never migrated
+data — a schema bump simply dropped and recreated the stores, which is only defensible
+while no user data exists. Once it does, the `onupgradeneeded` pattern gets ugly fast at
+version 4 or 5, and Dexie's versioning/migration story is exactly what you do not want to
+hand-roll.
 
 !!! success "Recommendation"
     - Learning or a tiny schema → raw IndexedDB, or `idb` to remove the ceremony.

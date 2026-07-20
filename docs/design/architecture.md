@@ -223,18 +223,24 @@ IndexedDB database `lockbox`, version 3, three object stores:
 | `outbox` | `seq` (autoIncrement), index on `ownerId` | `{seq, op, noteId, payload, status, attempts, lastError, queuedAt, ownerId}` | `payload` carries ciphertext |
 
 ```typescript
-// Fresh install creates the current (v3) shape. Older clients chain step
-// migrations: v1 → multi-vault, then v2 → compound note keys.
-if (oldVersion < 1) {
-    db.createObjectStore(STORE_VAULT, { keyPath: 'id' })
-    const notes = db.createObjectStore(STORE_NOTES, { keyPath: ['ownerId', 'id'] })
-    notes.createIndex('ownerId', 'ownerId')
-    const outbox = db.createObjectStore(STORE_OUTBOX, {
-        keyPath: 'seq',
-        autoIncrement: true,
-    })
-    outbox.createIndex('ownerId', 'ownerId')
+// One schema, version 3. A fresh install creates it. A pre-release dev
+// database (1 <= oldVersion < 3) is dropped and recreated, not migrated:
+// no user data ever existed before v3, so there is nothing to preserve.
+// (Array.from matters: objectStoreNames is a live list that shrinks as
+// stores are deleted.)
+if (oldVersion >= 1) {
+    for (const name of Array.from(db.objectStoreNames)) {
+        db.deleteObjectStore(name)
+    }
 }
+db.createObjectStore(STORE_VAULT, { keyPath: 'id' })
+const notes = db.createObjectStore(STORE_NOTES, { keyPath: ['ownerId', 'id'] })
+notes.createIndex('ownerId', 'ownerId')
+const outbox = db.createObjectStore(STORE_OUTBOX, {
+    keyPath: 'seq',
+    autoIncrement: true,
+})
+outbox.createIndex('ownerId', 'ownerId')
 ```
 
 The compound note key is load-bearing for multi-user: two users pulling the same server

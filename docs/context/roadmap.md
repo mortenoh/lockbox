@@ -32,7 +32,7 @@ worse than none.
 **Effort: M · E2e is done; the remaining gap is a fast unit layer.**
 
 Playwright covers the headline claims against a real browser (vault lifecycle, offline
-queue, both sync modes, multi-user isolation, recovery, migrations). The Python backend has
+queue, both sync modes, multi-user isolation, recovery). The Python backend has
 **36** tests. What is still missing is a **Vitest** suite that runs in seconds for the pure
 logic:
 

@@ -184,7 +184,7 @@ These are the things worth a reviewer's attention first.
 ```bash
 make lint          # ruff + mypy + pyright
 make test          # backend tests (36)
-make test-e2e      # browser end-to-end tests (Playwright, 46)
+make test-e2e      # browser end-to-end tests (Playwright, 45)
 make lint-frontend # oxlint
 ```
 
