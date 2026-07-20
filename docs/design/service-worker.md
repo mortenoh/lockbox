@@ -282,3 +282,45 @@ this process.
 - **Push notifications** — not relevant to this project.
 - **Runtime caching of anything beyond the shell** — there is nothing else to cache;
   all data lives in IndexedDB.
+
+## Updating: why the worker must not wait
+
+A service worker that installs but does not activate is not a stale-code
+problem, it is a blank-page problem.
+
+The shipped design deferred activation to a `SKIP_WAITING` message from the
+page — and nothing ever sent one. So a rebuilt worker sat in `waiting`
+indefinitely while its predecessor kept serving the shell it had cached. That
+shell references content-hashed asset filenames, and a rebuild renames them, so
+the old shell asks for files the server no longer has. The result is a page that
+loads, renders nothing, and reports no error.
+
+!!! tip "The tell was that it worked in a private window"
+    A fresh profile has no previous worker to get stuck behind, so it always
+    looked fine. Any browser that had visited before was broken. That asymmetry
+    is worth recognising quickly — it points at the worker rather than the
+    server, and the server is where the time usually gets spent.
+
+Two changes fix it:
+
+```javascript
+// install: activate immediately rather than queueing behind the old worker
+.then(() => self.skipWaiting())
+```
+
+```javascript
+// the page: a handover means this document is still running the old worker's
+// JavaScript, so line them up once
+navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return
+    reloading = true
+    window.location.reload()
+})
+```
+
+`hadController` is captured *before* registering, so a first visit does not
+trigger a pointless reload — only a genuine handover does.
+
+The alternative, keeping the wait and prompting the user to reload, is a
+defensible design and what Workbox recommends. It is simply not what this
+project had: it had the wait without the prompt, which is the worst of both.

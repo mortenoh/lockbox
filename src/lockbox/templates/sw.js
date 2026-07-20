@@ -11,8 +11,13 @@
  *       succeeded.
  *
  * The cache name carries a content hash of the shell assets (injected by the
- * server), so shipping any change to a JS/CSS file automatically installs a new
- * worker; the activate handler then deletes the superseded caches.
+ * server), so shipping any change to a JS/CSS file installs a new worker, which
+ * then activates immediately and deletes the superseded caches.
+ *
+ * Updating has to be automatic here. A cache-first shell that never hands over
+ * to its replacement does not merely serve stale code - it serves a shell whose
+ * asset filenames have been rebuilt away, which is a blank page rather than an
+ * out-of-date one.
  */
 
 /* Injected by the server: a hash of the shell assets' contents. Change any
@@ -27,7 +32,21 @@ const SHELL_ASSETS = {{ shell_assets }};
 
 self.addEventListener("install", (event) => {
     event.waitUntil(
-        caches.open(CACHE_VERSION).then((cache) => cache.addAll(SHELL_ASSETS)),
+        caches
+            .open(CACHE_VERSION)
+            .then((cache) => cache.addAll(SHELL_ASSETS))
+            // Activate immediately instead of waiting for every tab to close.
+            //
+            // Without this a rebuilt worker sits in "waiting" indefinitely while
+            // the previous one keeps serving its cached shell - and that shell
+            // references asset filenames that no longer exist, so the page
+            // renders blank. The only cure was closing every tab, which is why
+            // it looked fine in a private window and broken everywhere else.
+            //
+            // The earlier design deferred to a SKIP_WAITING message from the
+            // page, which nothing ever sent. Half a handshake is worse than
+            // none: it looked deliberate while behaving like a bug.
+            .then(() => self.skipWaiting()),
     );
 });
 
@@ -44,8 +63,8 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("message", (event) => {
-    // The page decides when a waiting worker activates, so an update cannot
-    // swap code out from under a half-finished write.
+    // Retained so a page can still force activation explicitly, though install
+    // now skips waiting on its own.
     if (event.data === "SKIP_WAITING") self.skipWaiting();
 });
 

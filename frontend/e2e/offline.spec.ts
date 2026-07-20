@@ -1,6 +1,13 @@
 import { expect, test } from '@playwright/test'
 
-import { addNote, clearServer, createUser, readIndexedDb, wipeDevice } from './helpers'
+import {
+    addNote,
+    clearServer,
+    createUser,
+    readIndexedDb,
+    waitForActivatedWorker,
+    wipeDevice,
+} from './helpers'
 
 /**
  * Offline behaviour: the service worker, the outbox, and reconnection.
@@ -17,22 +24,10 @@ test.describe('offline', () => {
 
     test('the service worker registers and precaches the shell', async ({ page }) => {
         await page.goto('/')
+        await waitForActivatedWorker(page)
         const registered = await page.evaluate(async () => {
             const reg = await navigator.serviceWorker.ready
-            // `ready` resolves as soon as there is an active worker, which may
-            // still be 'activating'. Wait for it to finish before asserting.
-            const worker = reg.active!
-            if (worker.state !== 'activated') {
-                await new Promise<void>((res) => {
-                    worker.addEventListener('statechange', function onChange() {
-                        if (worker.state === 'activated') {
-                            worker.removeEventListener('statechange', onChange)
-                            res()
-                        }
-                    })
-                })
-            }
-            return { active: worker.state, scope: new URL(reg.scope).pathname }
+            return { active: reg.active!.state, scope: new URL(reg.scope).pathname }
         })
 
         expect(registered.active).toBe('activated')
@@ -151,5 +146,63 @@ test.describe('offline routing', () => {
         await expect(page.getByRole('button', { name: 'Unlock', exact: true })).toBeVisible()
 
         await context.setOffline(false)
+    })
+})
+
+test.describe('service worker updates', () => {
+    test.beforeEach(async ({ page, request }) => {
+        await clearServer(request)
+        await page.goto('/')
+        await wipeDevice(page)
+    })
+
+    test('a new worker activates instead of waiting', async ({ page }) => {
+        // The bug this guards against: the worker deferred activation to a
+        // SKIP_WAITING message that nothing ever sent, so a rebuilt worker sat
+        // in "waiting" forever while the old one served a shell referencing
+        // asset filenames that no longer existed. The page rendered blank, and
+        // only a private window - with no old worker - looked fine.
+        await page.goto('/')
+        await waitForActivatedWorker(page)
+
+        const state = await page.evaluate(async () => {
+            const [reg] = await navigator.serviceWorker.getRegistrations()
+            return {
+                waiting: !!reg?.waiting,
+                active: reg?.active?.state,
+                controlled: !!navigator.serviceWorker.controller,
+            }
+        })
+
+        expect(state.waiting).toBe(false)
+        expect(state.active).toBe('activated')
+        expect(state.controlled).toBe(true)
+    })
+
+    test('only the current cache survives', async ({ page }) => {
+        // The activate handler evicts superseded caches, which only runs if the
+        // worker actually activates.
+        await page.goto('/')
+        await waitForActivatedWorker(page)
+
+        const names = await page.evaluate(() => caches.keys())
+        expect(names).toHaveLength(1)
+        expect(names[0]).toMatch(/^lockbox-[0-9a-f]{12}$/)
+    })
+
+    test('the cached shell references assets that exist', async ({ page }) => {
+        // A shell pointing at rebuilt-away filenames is the blank page itself.
+        await page.goto('/')
+        await waitForActivatedWorker(page)
+
+        const result = await page.evaluate(async () => {
+            const html = await (await fetch('/', { cache: 'no-store' })).text()
+            const match = html.match(/\/assets\/index-[A-Za-z0-9_-]+\.js/)
+            if (!match) return { asset: null, status: 0 }
+            return { asset: match[0], status: (await fetch(match[0])).status }
+        })
+
+        expect(result.asset).toBeTruthy()
+        expect(result.status).toBe(200)
     })
 })

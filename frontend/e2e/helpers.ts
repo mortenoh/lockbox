@@ -114,3 +114,26 @@ export async function clearServer(request: APIRequestContext): Promise<void> {
         }
     }
 }
+
+/**
+ * Wait until the service worker is fully activated.
+ *
+ * `navigator.serviceWorker.ready` resolves as soon as there *is* an active
+ * worker, which may still be in the 'activating' state - so asserting on it
+ * immediately is a race.
+ */
+export async function waitForActivatedWorker(page: Page): Promise<void> {
+    await page.evaluate(async () => {
+        const reg = await navigator.serviceWorker.ready
+        const worker = reg.active
+        if (!worker || worker.state === 'activated') return
+        await new Promise<void>((resolve) => {
+            worker.addEventListener('statechange', function onChange() {
+                if (worker.state === 'activated') {
+                    worker.removeEventListener('statechange', onChange)
+                    resolve()
+                }
+            })
+        })
+    })
+}
