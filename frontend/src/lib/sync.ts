@@ -59,10 +59,10 @@
  *    you are online behind a captive portal.
  */
 
-import { decryptJson, encryptJson, type NoteContent } from '@/lib/crypto'
+import { decryptJson, encryptJson } from '@/lib/crypto'
 import { apiFetch } from '@/lib/api'
 import * as db from '@/lib/db'
-import type { OutboxEntry } from '@/lib/db'
+import type { NoteContent, OutboxEntry } from '@/lib/db'
 
 /** A readable record as the plaintext API returns it. */
 interface PlainNoteWire {

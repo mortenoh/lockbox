@@ -251,7 +251,7 @@ credential.getClientExtensionResults() // extension outputs (see §6)
 
 Everything binary is an `ArrayBuffer`, and JSON cannot carry those. Convert with
 base64url before sending or storing — see `toBase64` / `fromBase64` in
-`frontend/src/lib/webauthn.ts`.
+`frontend/src/lib/encoding.ts`.
 
 ### Authentication
 
