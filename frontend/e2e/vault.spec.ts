@@ -164,3 +164,22 @@ test.describe('create-form validation', () => {
         await expect(page.getByRole('button', { name: 'Create vault' })).toBeEnabled()
     })
 })
+
+test.describe('security page', () => {
+    test.beforeEach(async ({ page, request }) => {
+        await clearServer(request)
+        await page.goto('/')
+        await wipeDevice(page)
+    })
+
+    test('no token field when the server does not want one', async ({ page }) => {
+        // The e2e server runs with --auth none, so asking for a credential
+        // would be requesting a secret that has no use - and implying an
+        // authentication step that does not exist.
+        await createUser(page, 'Ward 3 Clinic', '1234')
+        await page.locator('aside').getByRole('button', { name: /Security/ }).click()
+
+        await expect(page.getByText('nothing to configure')).toBeVisible()
+        await expect(page.locator('#api-token')).toBeHidden()
+    })
+})

@@ -284,51 +284,75 @@ export function SecurityPage({
                 </CardContent>
             </Card>
 
-            <Card>
-                <CardHeader>
-                    <div className="flex items-center gap-2">
-                        <CardTitle>Server access token</CardTitle>
-                        {authState === 'ok' && <Badge variant="outline">authorised</Badge>}
-                        {authState === 'unauthorized' && <Badge variant="destructive">rejected</Badge>}
-                        {authState === 'unreachable' && <Badge variant="secondary">offline</Badge>}
-                    </div>
-                    <CardDescription>
-                        Required when the server runs with <code>--auth token</code>, which is what
-                        makes a publicly reachable deployment safe to expose. This is a server
-                        credential, not the encryption key — it never unlocks anything locally.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="grid gap-3">
-                    <Label htmlFor="api-token">Token</Label>
-                    <Input
-                        id="api-token"
-                        value={token}
-                        placeholder="Leave empty if the server runs with --auth none"
-                        onChange={(e) => setTokenValue(e.target.value)}
-                    />
-                    <label className="flex items-start gap-2 text-sm">
-                        <input
-                            type="checkbox"
-                            checked={remember}
-                            className="mt-1"
-                            onChange={(e) => setRemember(e.target.checked)}
+            {/* Only shown when it is actually relevant. The server answers
+                /api/info without credentials when it runs with --auth none, so
+                presenting a token field then is asking for a secret that has no
+                use - and implying an authentication step that does not exist. */}
+            {authState === 'ok' && !token ? (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-base">Server access</CardTitle>
+                        <CardDescription>
+                            This server accepts requests without a token, so there is nothing to
+                            configure. Start it with <code>--auth token</code> if it is reachable
+                            beyond localhost — see the Remote Access docs.
+                        </CardDescription>
+                    </CardHeader>
+                </Card>
+            ) : (
+                <Card>
+                    <CardHeader>
+                        <div className="flex items-center gap-2">
+                            <CardTitle>Server access token</CardTitle>
+                            {authState === 'ok' && <Badge variant="outline">authorised</Badge>}
+                            {authState === 'unauthorized' && (
+                                <Badge variant="destructive">rejected</Badge>
+                            )}
+                            {authState === 'unreachable' && (
+                                <Badge variant="secondary">offline</Badge>
+                            )}
+                        </div>
+                        <CardDescription>
+                            This server requires a token on <code>/api/*</code>. It is a server
+                            credential, not the encryption key — it never unlocks anything locally.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-3">
+                        <Label htmlFor="api-token">Token</Label>
+                        <Input
+                            id="api-token"
+                            value={token}
+                            placeholder="Paste the token printed by the server"
+                            onChange={(e) => setTokenValue(e.target.value)}
                         />
-                        <span>
-                            Remember on this device
-                            <span className="text-muted-foreground block text-xs">
-                                Off by default. A stored token lets anyone holding this device
-                                fetch every <strong>synced</strong> note in plaintext from the
-                                server, without the PIN — bypassing the encryption entirely.
-                                Unsynced notes stay protected either way.
+                        <label className="flex items-start gap-2 text-sm">
+                            <input
+                                type="checkbox"
+                                checked={remember}
+                                className="mt-1"
+                                onChange={(e) => setRemember(e.target.checked)}
+                            />
+                            <span>
+                                Remember on this device
+                                <span className="text-muted-foreground block text-xs">
+                                    Off by default. A stored token lets anyone holding this device
+                                    fetch every <strong>synced</strong> note in plaintext from the
+                                    server, without the PIN — bypassing the encryption entirely.
+                                    Unsynced notes stay protected either way.
+                                </span>
                             </span>
-                        </span>
-                    </label>
+                        </label>
 
-                    <Button size="sm" className="justify-self-start" onClick={() => void saveToken()}>
-                        Save and test
-                    </Button>
-                </CardContent>
-            </Card>
+                        <Button
+                            size="sm"
+                            className="justify-self-start"
+                            onClick={() => void saveToken()}
+                        >
+                            Save and test
+                        </Button>
+                    </CardContent>
+                </Card>
+            )}
 
             <Alert>
                 <AlertTitle>Why a refresh always asks again</AlertTitle>
