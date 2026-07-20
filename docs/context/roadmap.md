@@ -8,37 +8,22 @@ Effort is rough calendar effort for one developer already familiar with the code
 
 ## Recently completed
 
-Two significant items have landed and are no longer roadmap material.
+Listed because several Priority 1 and 2 items have moved, and a stale roadmap is
+worse than none.
 
-!!! success "Done: Argon2id key derivation"
-    Argon2id via `hash-wasm` is now the **default KDF for all new vaults** — 64 MiB,
-    `t = 3`, `p = 1`. The WASM ships inside the app bundle and is precached, so unlock works
-    fully offline. The vault record stores `{kdf, params}`, `vaultKdf()` treats a record
-    with no `kdf` field as PBKDF2 so pre-existing vaults still open, and
-    `changePassphrase()` takes a `kdf` argument so migrating a PBKDF2 vault is the same
-    O(1) re-wrap as a passphrase change.
-
-    `benchmarkKdf()` and the **KDF Lab** page time both algorithms on the actual device.
-    PBKDF2 at 600k iterations is retained only for legacy vaults and as the comparison arm.
-
-    **Follow-up, and it is a real one:** the measured times on the dev machine are
-    132–146 ms for Argon2id and 54–67 ms for PBKDF2 — both *below* the 250–500 ms
-    interactive target, meaning the parameters should be raised. Doing that properly means
-    benchmarking on a low-end Android tablet first. See
-    [Encryption](../design/encryption.md#benchmark-on-the-device-not-on-the-guidance).
-
-!!! success "Done: two sync modes, with plaintext as the default"
-    `SyncMode = 'plaintext' | 'encrypted'` in `sync.ts`, default `'plaintext'`, persisted in
-    `localStorage` and switchable at runtime. Two parallel backend APIs
-    (`/api/plain-notes` and `/api/notes`) backed by a generic `RecordStore[T: NoteBase]`,
-    with `/api/info` reporting both counts and `lockbox dump` printing both stores.
-
-    This corrected the project's central framing: encryption is **local-only**, because a
-    per-user passphrase cannot govern data a shared platform must validate, aggregate and
-    share. See [DHIS2 Context](dhis2.md#the-per-user-passphrase-problem).
-
-    The honest consequence — plaintext sync requires an unlocked vault — is implemented and
-    surfaced as `blockedByLock` rather than hidden.
+| Item | Notes |
+| --- | --- |
+| **Automated tests for the TypeScript layer** | 45 Playwright tests against a real browser rather than jsdom with a fake IndexedDB. Several are named regressions for bugs that shipped. |
+| **Argon2id as the default KDF** | Replaced PBKDF2, which is retained for legacy vaults and as the comparison arm in the KDF Lab. |
+| **KDF parameters raised** | 64 → 128 MiB, chosen from six measured candidates rather than taste. |
+| **WebAuthn PRF unlock** | The same DEK wrapped a second time under authenticator-derived key material. Verified on real hardware only — see below. |
+| **Auto-lock on inactivity** | Timestamp-based, so a sleeping device notices on wake. |
+| **Multiple users per device** | Vaults keyed per user, notes keyed `[ownerId, id]`. |
+| **Deletions converge** | Dated tombstones, applied on pull. |
+| **Automatic pull** | Remote changes arrive without a manual press. |
+| **Routing** | `HashRouter`, so a reload returns to the page you were on. |
+| **Token authentication** | Two modes, `none` and `token`, with the API gated by middleware. |
+| **Self-healing from a bricked client** | Layered recovery so a blank page can never require DevTools. |
 
 ## Priority 1 — the gaps that undermine current claims
 

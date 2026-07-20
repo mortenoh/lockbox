@@ -163,6 +163,7 @@ SQLCipher, Workbox, Replicache/Zero), and a [roadmap](docs/context/roadmap.md).
 ## Known gaps
 
 Listed because a project about honest trade-offs should be honest about itself.
+These are the things worth a reviewer's attention first.
 
 - **Existing clients cannot be rescued remotely.** Recovery from a bricked state ships
   inside the app, so a browser stuck on a build that predates it needs one manual clear.
