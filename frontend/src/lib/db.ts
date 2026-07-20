@@ -74,13 +74,109 @@ const OPEN_TIMEOUT_MS = 5_000
 let dbPromise: Promise<IDBDatabase> | null = null
 
 /**
+ * Migrate v1 → v2: one out-of-line vault becomes multi-vault with in-line ids.
+ *
+ * v1 stored a single vault under the fixed key `"default"`. v2 keys vaults by
+ * an in-line `id`, so the store must be read, dropped, recreated, and
+ * repopulated. Existing notes and outbox entries are stamped with the migrated
+ * vault's id so they keep a home.
+ *
+ * Cursor work is asynchronous; call `onDone` only after every cursor finishes
+ * so a chained v2 → v3 step never races this one.
+ */
+function migrateToV2(db: IDBDatabase, tx: IDBTransaction, onDone: () => void): void {
+    const legacyId = crypto.randomUUID()
+    let pending = 3 // vault + notes + outbox
+    const stepDone = () => {
+        pending -= 1
+        if (pending === 0) onDone()
+    }
+
+    // Read the single v1 vault before dropping its store.
+    const legacyRequest = tx.objectStore(STORE_VAULT).get('default')
+    legacyRequest.onsuccess = () => {
+        const legacy = legacyRequest.result as VaultRecord | undefined
+
+        db.deleteObjectStore(STORE_VAULT)
+        const vaults = db.createObjectStore(STORE_VAULT, { keyPath: 'id' })
+        if (legacy) {
+            vaults.put({
+                ...legacy,
+                id: legacyId,
+                owner: legacy.owner ?? 'Existing user',
+            })
+        }
+        stepDone()
+    }
+    legacyRequest.onerror = () => stepDone()
+
+    // Adopt existing notes and queue entries into the migrated vault.
+    const notes = tx.objectStore(STORE_NOTES)
+    if (!notes.indexNames.contains('ownerId')) notes.createIndex('ownerId', 'ownerId')
+    const notesCursor = notes.openCursor()
+    notesCursor.onsuccess = (e) => {
+        const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result
+        if (!cursor) {
+            stepDone()
+            return
+        }
+        cursor.update({ ...cursor.value, ownerId: cursor.value.ownerId ?? legacyId })
+        cursor.continue()
+    }
+    notesCursor.onerror = () => stepDone()
+
+    const outbox = tx.objectStore(STORE_OUTBOX)
+    if (!outbox.indexNames.contains('ownerId')) {
+        outbox.createIndex('ownerId', 'ownerId')
+    }
+    const outboxCursor = outbox.openCursor()
+    outboxCursor.onsuccess = (e) => {
+        const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result
+        if (!cursor) {
+            stepDone()
+            return
+        }
+        cursor.update({ ...cursor.value, ownerId: cursor.value.ownerId ?? legacyId })
+        cursor.continue()
+    }
+    outboxCursor.onerror = () => stepDone()
+}
+
+/**
+ * Migrate v2 → v3: notes are keyed by `[ownerId, id]`, not `id` alone.
+ *
+ * Two users pulling the same server record share its id, so a single-field
+ * keyPath let one user's ciphertext overwrite the other's. keyPath cannot be
+ * altered in place, so the store is rebuilt.
+ */
+function migrateToV3(db: IDBDatabase, tx: IDBTransaction): void {
+    const legacyNotes: NoteRecord[] = []
+    const cursorRequest = tx.objectStore(STORE_NOTES).openCursor()
+    cursorRequest.onsuccess = (e) => {
+        const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result
+        if (cursor) {
+            legacyNotes.push(cursor.value as NoteRecord)
+            cursor.continue()
+            return
+        }
+
+        db.deleteObjectStore(STORE_NOTES)
+        const rebuilt = db.createObjectStore(STORE_NOTES, {
+            keyPath: ['ownerId', 'id'],
+        })
+        rebuilt.createIndex('ownerId', 'ownerId')
+        for (const note of legacyNotes) {
+            if (note.ownerId) rebuilt.put(note)
+        }
+    }
+}
+
+/**
  * Open (and if needed create/upgrade) the database.
  *
- * The v1 -> v2 migration is worth reading: v1 stored a single vault under the
- * fixed key "default" with out-of-line keys. v2 keys vaults by an in-line `id`,
- * which means the store cannot simply be altered - it has to be read, dropped,
- * recreated with a keyPath, and repopulated. Existing notes are adopted by the
- * migrated vault so nobody loses data on upgrade.
+ * Step migrations chain: a client jumping from v1 to v3 must run v1 → v2 and
+ * then v2 → v3, never only the first. Earlier code returned early from the v2
+ * path and skipped the compound-key rebuild on that jump.
  */
 function openDb(): Promise<IDBDatabase> {
     if (dbPromise) return dbPromise
@@ -118,7 +214,7 @@ function openDb(): Promise<IDBDatabase> {
             const oldVersion = event.oldVersion
 
             if (oldVersion < 1) {
-                // Fresh install: create everything in its v2 shape.
+                // Fresh install: create everything in its current (v3) shape.
                 db.createObjectStore(STORE_VAULT, { keyPath: 'id' })
 
                 // Compound key, not 'id'. Two users pulling the same server
@@ -135,71 +231,20 @@ function openDb(): Promise<IDBDatabase> {
                 return
             }
 
-            if (oldVersion === 2 && tx) {
-                // Rebuild the notes store with a compound key. keyPath cannot be
-                // altered in place, so the records are read out, the store is
-                // dropped and recreated, then repopulated.
-                const legacyNotes: NoteRecord[] = []
-                const cursorRequest = tx.objectStore(STORE_NOTES).openCursor()
-                cursorRequest.onsuccess = (e) => {
-                    const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result
-                    if (cursor) {
-                        legacyNotes.push(cursor.value as NoteRecord)
-                        cursor.continue()
-                        return
-                    }
+            if (!tx) return
 
-                    db.deleteObjectStore(STORE_NOTES)
-                    const rebuilt = db.createObjectStore(STORE_NOTES, {
-                        keyPath: ['ownerId', 'id'],
-                    })
-                    rebuilt.createIndex('ownerId', 'ownerId')
-                    for (const note of legacyNotes) {
-                        if (note.ownerId) rebuilt.put(note)
-                    }
-                }
-                return
-            }
+            // Chain: each step must finish before the next starts. Cursor work
+            // inside a versionchange transaction is async; starting migrateToV3
+            // while migrateToV2 is still stamping ownerId would race.
+            const needsV2 = oldVersion < 2
+            const needsV3 = oldVersion < 3
 
-            if (oldVersion < 2 && tx) {
-                const legacyId = crypto.randomUUID()
-
-                // Read the single v1 vault before dropping its store.
-                const legacyRequest = tx.objectStore(STORE_VAULT).get('default')
-                legacyRequest.onsuccess = () => {
-                    const legacy = legacyRequest.result as VaultRecord | undefined
-
-                    db.deleteObjectStore(STORE_VAULT)
-                    const vaults = db.createObjectStore(STORE_VAULT, { keyPath: 'id' })
-                    if (legacy) {
-                        vaults.put({
-                            ...legacy,
-                            id: legacyId,
-                            owner: legacy.owner ?? 'Existing user',
-                        })
-                    }
-                }
-
-                // Adopt existing notes and queue entries into the migrated vault.
-                const notes = tx.objectStore(STORE_NOTES)
-                if (!notes.indexNames.contains('ownerId')) notes.createIndex('ownerId', 'ownerId')
-                notes.openCursor().onsuccess = (e) => {
-                    const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result
-                    if (!cursor) return
-                    cursor.update({ ...cursor.value, ownerId: cursor.value.ownerId ?? legacyId })
-                    cursor.continue()
-                }
-
-                const outbox = tx.objectStore(STORE_OUTBOX)
-                if (!outbox.indexNames.contains('ownerId')) {
-                    outbox.createIndex('ownerId', 'ownerId')
-                }
-                outbox.openCursor().onsuccess = (e) => {
-                    const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result
-                    if (!cursor) return
-                    cursor.update({ ...cursor.value, ownerId: cursor.value.ownerId ?? legacyId })
-                    cursor.continue()
-                }
+            if (needsV2) {
+                migrateToV2(db, tx, () => {
+                    if (needsV3) migrateToV3(db, tx)
+                })
+            } else if (needsV3) {
+                migrateToV3(db, tx)
             }
         }
 
