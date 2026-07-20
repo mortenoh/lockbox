@@ -126,8 +126,11 @@ test.describe('multiple users on one device', () => {
         expect(before.notes).toHaveLength(2)
 
         await page.getByRole('button', { name: 'Sign out and switch user' }).click()
-        page.once('dialog', (d) => void d.accept())
+
+        // An in-app AlertDialog now, not window.confirm - so confirm by
+        // clicking, the way a user does.
         await page.getByRole('button', { name: 'Remove District Office' }).click()
+        await page.getByRole('alertdialog').getByRole('button', { name: 'Remove' }).click()
 
         const after = await readIndexedDb(page)
         expect(after.notes).toHaveLength(1)

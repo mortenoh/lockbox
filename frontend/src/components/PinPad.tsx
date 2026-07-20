@@ -1,4 +1,4 @@
-import { Delete } from 'lucide-react'
+import { Delete, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -19,6 +19,8 @@ interface PinPadProps {
     disabled?: boolean
     /** Submit button label - this pad is used to both create and unlock. */
     submitLabel?: string
+    /** Shown in place of the label while the key is being derived. */
+    busyLabel?: string
     /**
      * Extra reason the form is not submittable yet, beyond PIN length.
      *
@@ -48,13 +50,17 @@ export function PinPad({
     maxLength = 6,
     disabled,
     submitLabel = 'Unlock',
+    busyLabel = 'Deriving key…',
     submitDisabled = false,
 }: PinPadProps) {
     const press = (digit: string) =>
         onChange((previous) => (previous.length >= maxLength ? previous : previous + digit))
 
     return (
-        <div className="grid gap-4">
+        // cursor-progress rather than cursor-wait: the app is still responsive,
+        // it is just working. Applied to the whole pad so the pointer changes
+        // wherever it happens to be.
+        <div className={cn('grid gap-4', disabled && 'cursor-progress')}>
             {/* Filled dots rather than the digits: shoulder-surfing in a clinic
                 is a real threat, and the count is the only useful feedback. */}
             <div className="flex justify-center gap-2.5" aria-hidden>
@@ -122,7 +128,14 @@ export function PinPad({
                 onClick={onSubmit}
                 className="w-full"
             >
-                {submitLabel}
+                {disabled ? (
+                    <>
+                        <Loader2 className="animate-spin" />
+                        {busyLabel}
+                    </>
+                ) : (
+                    submitLabel
+                )}
             </Button>
         </div>
     )

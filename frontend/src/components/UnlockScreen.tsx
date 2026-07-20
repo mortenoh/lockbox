@@ -1,9 +1,20 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Fingerprint, KeyRound, Loader2, Plus, ShieldCheck, Trash2, UserRound } from 'lucide-react'
 
 import { PinPad } from '@/components/PinPad'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,6 +30,7 @@ import {
 } from '@/lib/crypto'
 import * as db from '@/lib/db'
 import { initials } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import { isBiometricAvailable, unlockWithBiometric } from '@/lib/webauthn'
 
 interface UnlockScreenProps {
@@ -164,23 +176,35 @@ function StorageFailure({ message }: { message: string }) {
                     {/* Last resort, in the app rather than in DevTools. Nobody
                         should have to be told to open developer tools to make a
                         page load. */}
-                    <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={async () => {
-                            const ok = window.confirm(
-                                'Delete all local data and start over?\n\n' +
-                                    'Every vault on this device is removed, along with any note ' +
-                                    'that has not synced yet. Notes already on the server can be ' +
-                                    'recovered by signing in again and pulling.',
-                            )
-                            if (!ok) return
-                            await db.destroyDatabase()
-                            window.location.reload()
-                        }}
-                    >
-                        Reset local data
-                    </Button>
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                            <Button variant="destructive" size="sm">
+                                Reset local data
+                            </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Delete all local data?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Every vault on this device is removed, along with any note that
+                                    has not synced yet. Notes already on the server can be
+                                    recovered by signing in again and pulling.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                    className={buttonVariants({ variant: 'destructive' })}
+                                    onClick={async () => {
+                                        await db.destroyDatabase()
+                                        window.location.reload()
+                                    }}
+                                >
+                                    Delete everything
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
                 </CardContent>
             </Card>
         </div>
@@ -200,11 +224,6 @@ interface UserPickerProps {
 
 function UserPicker({ vaults, onSelect, onAdd, onRemoved }: UserPickerProps) {
     async function handleRemove(vault: VaultRecord) {
-        const ok = window.confirm(
-            `Remove ${vault.owner} from this device? Their unsynced notes are lost. ` +
-                `Anything already synced can be recovered by signing in again and pulling.`,
-        )
-        if (!ok) return
         await db.deleteVault(vault.id)
         onRemoved()
     }
@@ -238,14 +257,38 @@ function UserPicker({ vaults, onSelect, onAdd, onRemoved }: UserPickerProps) {
                                 </span>
                             </span>
                         </button>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Remove ${vault.owner}`}
-                            onClick={() => void handleRemove(vault)}
-                        >
-                            <Trash2 className="size-4" />
-                        </Button>
+                        <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label={`Remove ${vault.owner}`}
+                                >
+                                    <Trash2 className="size-4" />
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>
+                                        Remove {vault.owner} from this device?
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        Their notes that have not synced yet are lost. Anything
+                                        already on the server can be recovered by signing in again
+                                        and pulling.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                        className={buttonVariants({ variant: 'destructive' })}
+                                        onClick={() => void handleRemove(vault)}
+                                    >
+                                        Remove
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
                     </div>
                 ))}
 
@@ -273,6 +316,7 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
     const [secret, setSecret] = useState('')
     const [error, setError] = useState<string | null>(null)
     const [busy, setBusy] = useState<'secret' | 'biometric' | null>(null)
+    const submitting = useRef(false)
 
     // When biometrics are enrolled they become the whole screen: one tap, no
     // keypad. The PIN is still there, one link away, because an authenticator
@@ -281,6 +325,9 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
     const [showPin, setShowPin] = useState(!canUseBiometric)
 
     async function submit() {
+        if (submitting.current) return
+        submitting.current = true
+
         setError(null)
         setBusy('secret')
         try {
@@ -294,6 +341,7 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
         } catch (err) {
             setError(`Could not unlock: ${err instanceof Error ? err.message : String(err)}`)
         } finally {
+            submitting.current = false
             setBusy(null)
         }
     }
@@ -414,6 +462,7 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
     const [secret, setSecret] = useState('')
     const [error, setError] = useState<string | null>(null)
     const [busy, setBusy] = useState(false)
+    const submitting = useRef(false)
 
     // The submit button is disabled until both fields are valid, so `create`
     // can only ever run on a complete form. Nothing here re-checks them.
@@ -421,8 +470,15 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
     const isComplete = trimmedOwner.length > 0 && secret.length >= 4
 
     async function create() {
-        setError(null)
+        // A ref, not the `busy` state: setBusy only takes effect on the next
+        // render, so clicks landing before that would each start their own
+        // createVault - and since every call mints a fresh vault id, that means
+        // several vaults from one intent. Argon2id takes long enough for this to
+        // be easy to hit.
+        if (submitting.current) return
+        submitting.current = true
 
+        setError(null)
         setBusy(true)
         try {
             const vault = await createVault(secret, trimmedOwner, DEFAULT_KDF)
@@ -432,12 +488,13 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
         } catch (err) {
             setError(`Could not create: ${err instanceof Error ? err.message : String(err)}`)
         } finally {
+            submitting.current = false
             setBusy(false)
         }
     }
 
     return (
-        <Card className="shadow-lg">
+        <Card className={cn('shadow-lg', busy && 'cursor-progress')} aria-busy={busy}>
             <CardHeader>
                 <div className="flex items-center gap-2">
                     <KeyRound className="text-primary size-5" aria-hidden />
