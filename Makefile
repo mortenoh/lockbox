@@ -1,4 +1,5 @@
-.PHONY: help install lint test test-e2e coverage serve build-frontend lint-frontend docs docs-serve docs-build clean
+.PHONY: help install lint test test-e2e coverage serve serve-token build-frontend lint-frontend \
+        tailnet tailnet-off funnel funnel-off tailnet-url docs docs-serve docs-build clean
 
 # ==============================================================================
 # Venv
@@ -7,6 +8,9 @@
 UV := $(shell command -v uv 2> /dev/null)
 VENV_DIR?=.venv
 PYTHON := $(VENV_DIR)/bin/python
+
+# Port the app is served on. Tailscale proxies to it on 443.
+PORT ?= 8000
 
 # ==============================================================================
 # Targets
@@ -21,9 +25,18 @@ help:
 	@echo "  test         Run backend tests"
 	@echo "  test-e2e     Run browser end-to-end tests (Playwright)"
 	@echo "  coverage     Run tests with coverage reporting"
-	@echo "  serve        Run the dev server on http://127.0.0.1:8000"
+	@echo "  serve        Run the dev server on http://127.0.0.1:$(PORT)"
+	@echo "  serve-token  Run the dev server requiring a bearer token"
 	@echo "  build-frontend  Build the React app into src/lockbox/static"
 	@echo "  lint-frontend   Lint the frontend with oxlint"
+	@echo ""
+	@echo "Remote access (needs Tailscale):"
+	@echo "  tailnet      Share over HTTPS with your tailnet only"
+	@echo "  tailnet-url  Print the MagicDNS URL"
+	@echo "  tailnet-off  Stop sharing"
+	@echo "  funnel       Publish to the PUBLIC internet (refuses without auth)"
+	@echo "  funnel-off   Stop publishing"
+	@echo ""
 	@echo "  docs-serve   Serve documentation locally with live reload"
 	@echo "  docs-build   Build documentation site"
 	@echo "  docs         Alias for docs-serve"
@@ -57,8 +70,54 @@ coverage:
 	@$(UV) run coverage xml
 
 serve:
-	@echo ">>> Serving on http://127.0.0.1:8000"
-	@$(UV) run lockbox serve --reload
+	@echo ">>> Serving on http://127.0.0.1:$(PORT)"
+	@$(UV) run lockbox serve --port $(PORT) --reload
+
+# Prints a freshly generated token. Required before exposing the app publicly.
+serve-token:
+	@echo ">>> Serving on http://127.0.0.1:$(PORT) with token auth"
+	@$(UV) run lockbox serve --port $(PORT) --auth token --reload
+
+# ==============================================================================
+# Remote access
+# ==============================================================================
+#
+# Service workers and WebAuthn both need a secure context, so a plain-HTTP LAN
+# address silently disables offline mode and biometric unlock. Tailscale issues
+# a real Let's Encrypt certificate, which is why these targets exist at all.
+
+tailnet:
+	@echo ">>> Sharing with your tailnet over HTTPS"
+	@tailscale serve --bg $(PORT)
+	@echo ""
+	@echo "Only devices signed into your tailnet can reach this."
+	@echo "Tailscale authenticates them, so --auth none is fine here."
+
+tailnet-url:
+	@tailscale status --json \
+	  | $(PYTHON) -c "import json,sys; print('https://' + json.load(sys.stdin)['Self']['DNSName'].rstrip('.'))"
+
+tailnet-off:
+	@echo ">>> Stopping tailnet sharing"
+	@tailscale serve --https=443 off
+
+# Publishes to the whole internet. Warns when the API is unauthenticated but
+# does not block: this is a demo, and how long it stays exposed is your call.
+funnel:
+	@if curl -sf -o /dev/null --max-time 5 http://127.0.0.1:$(PORT)/api/info 2>/dev/null; then \
+		echo ""; \
+		echo "  WARNING: /api/info answered without a token."; \
+		echo "  Anyone who finds this URL can read, write and delete every note."; \
+		echo "  Use 'make serve-token' if it will be up for more than a moment."; \
+		echo ""; \
+	fi
+	@tailscale funnel --bg $(PORT)
+	@echo ""
+	@echo "PUBLIC. Stop it with 'make funnel-off'."
+
+funnel-off:
+	@echo ">>> Stopping Funnel"
+	@tailscale funnel reset
 
 # The built frontend is committed, so this is only needed after changing
 # anything under frontend/src.

@@ -24,6 +24,29 @@ Tailscale solves this in two steps, and they are worth keeping distinct:
 **Use `serve` unless you actually need someone outside your tailnet to reach the
 app.** It is strictly less exposure for the same result.
 
+## Make targets
+
+The commands below are wrapped up, so the common paths are one word:
+
+```bash
+make tailnet       # share over HTTPS with your tailnet only
+make tailnet-url   # print the MagicDNS URL
+make tailnet-off   # stop
+
+make serve-token   # run the server requiring a bearer token
+make funnel        # publish to the public internet
+make funnel-off    # stop
+```
+
+`make funnel` checks whether `/api/*` answers without credentials and warns if
+it does. It still proceeds — how long the demo stays exposed is your call — but
+the warning is there because the combination is easy to reach by accident.
+
+Pass `PORT=8321` to any of them to use a different port.
+
+The rest of this page explains what those targets do, and how to recover when
+something does not behave.
+
 ## Step by step: `tailscale serve` (tailnet only)
 
 ### 1. Bind the server
