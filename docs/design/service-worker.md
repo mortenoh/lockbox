@@ -33,7 +33,12 @@ const SHELL_ASSETS = {{ shell_assets }};
 
 self.addEventListener("install", (event) => {
     event.waitUntil(
-        caches.open(CACHE_VERSION).then((cache) => cache.addAll(SHELL_ASSETS)),
+        caches
+            .open(CACHE_VERSION)
+            .then((cache) => cache.addAll(SHELL_ASSETS))
+            // Activate immediately: a waiting worker leaves open tabs on a shell
+            // whose hashed assets a rebuild may have renamed (blank page).
+            .then(() => self.skipWaiting()),
     );
 });
 ```

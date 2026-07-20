@@ -6,9 +6,9 @@ solves one problem and knows as little as possible about the others.
 ```mermaid
 flowchart TB
     subgraph browser["Browser"]
-        UI["React UI<br/>4 pages, sidebar shell"]
+        UI["React UI<br/>5 pages, sidebar shell"]
         CRYPTO["crypto.ts<br/>envelope encryption"]
-        DB["db.ts<br/>IndexedDB: vault / notes / outbox"]
+        DB["db.ts<br/>IndexedDB: vaults / notes / outbox"]
         SYNC["sync.ts<br/>outbox drain, 2 modes"]
         SW["sw.js<br/>service worker"]
     end
@@ -93,6 +93,7 @@ flowchart LR
     LAYOUT --> K["KDF Lab<br/>Argon2id vs PBKDF2"]
     LAYOUT --> S["Sync Modes<br/>plaintext vs encrypted"]
     LAYOUT --> R["At Rest<br/>raw IndexedDB dump"]
+    LAYOUT --> SEC["Security<br/>biometrics, auto-lock, token"]
 ```
 
 | Page | Source | What it demonstrates |
@@ -101,10 +102,12 @@ flowchart LR
 | KDF Lab | `pages/KdfLabPage.tsx` | `benchmarkKdf()` timing both algorithms on this device, with tunable memory and iteration counts |
 | Sync Modes | `pages/SyncModesPage.tsx` | `setMode()` plus `fetchServerState()`, printing both server stores raw and side by side |
 | At Rest | `pages/StoragePage.tsx` | `vault`, `notes` and `outbox` read straight from IndexedDB with no decryption |
+| Security | `pages/SecurityPage.tsx` | WebAuthn PRF enrolment, auto-lock timeout, optional API token |
 
 The shell itself carries a lock button, a light/dark theme toggle, toast notifications
 (`sonner`) and a status popover summarising what is held offline and whether persistence
-was granted.
+was granted. Several users can share one browser profile: each has their own vault and
+DEK; notes and outbox entries are scoped by `ownerId`.
 
 ## Data flow for a write
 
@@ -194,7 +197,7 @@ sequenceDiagram
     DB-->>UI: {salt, wrapIv, wrappedDek, kdf, params, createdAt}
     U->>UI: passphrase
     UI->>C: unlockVault(passphrase, vault)
-    Note over C: vaultKdf() reads the recorded algorithm,<br/>Argon2id (64 MiB, t=3, p=1) by default
+    Note over C: vaultKdf() reads the recorded algorithm,<br/>Argon2id (128 MiB, t=3, p=1) by default
     C->>C: unwrapKey(wrappedDek, KEK)
     alt correct passphrase
         C-->>UI: true (DEK held in memory, non-extractable)
@@ -211,45 +214,41 @@ PBKDF2, so older vaults still open.
 
 ## The object stores
 
-IndexedDB database `lockbox`, version 1, three object stores:
+IndexedDB database `lockbox`, version 3, three object stores:
 
 | Store | Key | Contents | Encrypted? |
 | --- | --- | --- | --- |
-| `vault` | fixed key `"default"` | `{salt, wrapIv, wrappedDek, kdf, params, createdAt}` | Not secret — inert without the passphrase |
-| `notes` | `id` (keyPath), index on `updatedAt` | `{id, iv, ciphertext, createdAt, updatedAt, synced}` | `ciphertext` only |
-| `outbox` | `seq` (autoIncrement), index on `status` | `{seq, op, noteId, payload, status, attempts, lastError, queuedAt}` | `payload` carries ciphertext |
+| `vault` | `id` (keyPath) — one record per local user | `{id, salt, wrapIv, wrappedDek, kdf, params, createdAt, owner, prf?}` | Not secret — inert without the passphrase (or PRF envelope) |
+| `notes` | `[ownerId, id]` (compound keyPath), index on `ownerId` | `{id, iv, ciphertext, createdAt, updatedAt, synced, ownerId, origin?}` | `ciphertext` only |
+| `outbox` | `seq` (autoIncrement), index on `ownerId` | `{seq, op, noteId, payload, status, attempts, lastError, queuedAt, ownerId}` | `payload` carries ciphertext |
 
 ```typescript
-request.onupgradeneeded = () => {
-    const db = request.result
-
-    if (!db.objectStoreNames.contains(STORE_VAULT)) {
-        db.createObjectStore(STORE_VAULT)
-    }
-    if (!db.objectStoreNames.contains(STORE_NOTES)) {
-        const notes = db.createObjectStore(STORE_NOTES, { keyPath: 'id' })
-        notes.createIndex('updatedAt', 'updatedAt')
-    }
-    if (!db.objectStoreNames.contains(STORE_OUTBOX)) {
-        const outbox = db.createObjectStore(STORE_OUTBOX, {
-            keyPath: 'seq',
-            autoIncrement: true,
-        })
-        outbox.createIndex('status', 'status')
-    }
+// Fresh install creates the current (v3) shape. Older clients chain step
+// migrations: v1 → multi-vault, then v2 → compound note keys.
+if (oldVersion < 1) {
+    db.createObjectStore(STORE_VAULT, { keyPath: 'id' })
+    const notes = db.createObjectStore(STORE_NOTES, { keyPath: ['ownerId', 'id'] })
+    notes.createIndex('ownerId', 'ownerId')
+    const outbox = db.createObjectStore(STORE_OUTBOX, {
+        keyPath: 'seq',
+        autoIncrement: true,
+    })
+    outbox.createIndex('ownerId', 'ownerId')
 }
 ```
 
-The **At Rest** page renders exactly this, unmodified, so the claim can be checked rather
-than taken on trust.
+The compound note key is load-bearing for multi-user: two users pulling the same server
+record share its `id`, so keying on `id` alone let one user's ciphertext overwrite the
+other's. The **At Rest** page renders the stores unmodified, so the claim can be checked
+rather than taken on trust.
 
 !!! note "What is deliberately left in the clear"
-    Note ids, `createdAt`, `updatedAt` and `synced` are plaintext. The app has to index
-    and order on them without unlocking — the note list renders (as locked placeholders)
-    and, in encrypted mode, the outbox drains while the vault is closed. The cost is a
-    metadata leak: an attacker with the device learns *that* a note existed at time T, and
-    how many, but not what it said. This is the fundamental trade of field-level
-    encryption; see
+    Note ids, `ownerId`, `createdAt`, `updatedAt`, `synced` and the vault `owner` display
+    name are plaintext. The app has to index and order on them without unlocking — the note
+    list renders (as locked placeholders) and, in encrypted mode, the outbox drains while
+    the vault is closed. The cost is a metadata leak: an attacker with the device learns
+    *that* a note existed at time T, and how many, but not what it said. This is the
+    fundamental trade of field-level encryption; see
     [Trade-offs](../context/trade-offs.md#field-level-vs-whole-database-encryption).
 
 ## The server

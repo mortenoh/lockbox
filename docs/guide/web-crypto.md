@@ -502,10 +502,10 @@ ratio is the entire point.
 | | PBKDF2-HMAC-SHA256 | Argon2id |
 | --- | --- | --- |
 | Cost dimension | CPU only | CPU **and** memory |
-| Memory per guess | Negligible (~hundreds of bytes) | Configurable (e.g. 64 MiB) |
+| Memory per guess | Negligible (~hundreds of bytes) | Configurable (e.g. 128 MiB) |
 | GPU/ASIC parallelism | Very high — cheap for attackers | Sharply limited by RAM |
 | In Web Crypto? | Yes, native | **No** — needs WASM |
-| Typical params (2026) | 600,000 iterations | 64 MiB, 3 passes, 1 lane |
+| Typical params (2026) | 600,000 iterations | 128 MiB, 3 passes, 1 lane (Lockbox default) |
 | Recommendation | Legacy vaults only | Default for new vaults |
 
 Web Crypto does **not** offer Argon2, and there is no sign it will. The practical answer
@@ -520,7 +520,7 @@ async function deriveBytesArgon2(passphrase, salt) {
   return argon2id({
     password: passphrase,
     salt,                    // Uint8Array, 16 bytes
-    memorySize: 65_536,      // KiB — 64 MiB per guess. The parameter that hurts attackers.
+    memorySize: 131_072,     // KiB — 128 MiB per guess. The parameter that hurts attackers.
     iterations: 3,           // passes over memory
     parallelism: 1,          // lanes — browsers give no reliable parallelism here
     hashLength: 32,          // bytes out, for an AES-256 key

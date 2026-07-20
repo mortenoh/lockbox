@@ -68,7 +68,7 @@ Uploading readable data means **decrypting at the moment of upload**, which mean
 - Compare Argon2id and PBKDF2 on the actual device, with tunable parameters.
 - Dump the raw contents of IndexedDB to prove no plaintext is present.
 
-## The four pages
+## The five pages
 
 The app is a multi-page shell with a collapsible left sidebar. Each page isolates one idea.
 
@@ -78,6 +78,7 @@ The app is a multi-page shell with a collapsible left sidebar. Each page isolate
 | **KDF Lab** | Live Argon2id vs PBKDF2 benchmark with tunable memory and iterations |
 | **Sync Modes** | Switch modes and view both server stores side by side |
 | **At Rest** | Raw IndexedDB dump — vault, notes, outbox — with no decryption |
+| **Security** | Biometric (WebAuthn PRF) enrolment, auto-lock, optional API token |
 
 ## What it deliberately does not do
 
@@ -85,8 +86,9 @@ The app is a multi-page shell with a collapsible left sidebar. Each page isolate
     Local encryption protects a **lost or powered-off device**. It does **not** protect a
     running session: an XSS bug in the page can read the live in-memory key. It also makes
     no claim about server-side confidentiality — in the default mode the server holds
-    readable data *by design*. There is no authentication on the demo server, no multi-user
-    support, and no passphrase recovery. See [Threat Model](design/threat-model.md).
+    readable data *by design*. Auth is optional shared-token only (not per-user), multiple
+    users can share one browser profile with separate vaults, and there is no passphrase
+    recovery. See [Threat Model](design/threat-model.md).
 
 ## Quickstart
 
