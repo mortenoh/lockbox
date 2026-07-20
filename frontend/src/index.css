@@ -1,7 +1,10 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/roboto";
+@import "@fontsource-variable/ibm-plex-sans";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -25,10 +28,13 @@
 
 @theme inline {
     --font-heading: var(--font-sans);
-    /* Match chapkit-app / the DHIS2 design system: Roboto for UI, a system
-       mono stack for code. */
-    --font-sans: 'Roboto Variable', 'Roboto', system-ui, sans-serif;
-    --font-mono: 'SF Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+    /* IBM Plex, per the clinical redesign: highly legible with a
+       technical/security character. Mono carries status microcopy and code. */
+    --font-sans: 'IBM Plex Sans Variable', 'IBM Plex Sans', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', 'SF Mono', Menlo, Consolas, monospace;
+    --color-status-synced: var(--status-synced);
+    --color-status-queued: var(--status-queued);
+    --color-status-local: var(--status-local);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -70,74 +76,88 @@
 }
 
 :root {
-    /* Light-grey canvas with white cards, mirroring dark mode where cards sit
-       a step lighter than the background so panels lift off the page. */
-    --background: oklch(0.97 0 0);
-    --foreground: oklch(0.145 0 0);
+    /* Clinical-card palette from the approved redesign (claude.ai/design,
+       "Lockbox UI redesign"). Neutral surfaces carry a faint teal cast
+       (hue 175); the identity green (hue 162) is reserved for primary
+       actions and the active nav rail. Values are lifted verbatim from the
+       mockup components - keep them in sync with the design project. */
+    --background: oklch(0.955 0.006 175);
+    --foreground: oklch(0.22 0.01 175);
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
+    --card-foreground: oklch(0.22 0.01 175);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.25rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --popover-foreground: oklch(0.22 0.01 175);
+    --primary: oklch(0.5 0.11 162);
+    --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(0.985 0.004 175);
+    --secondary-foreground: oklch(0.24 0.01 175);
+    --muted: oklch(0.965 0.004 175);
+    --muted-foreground: oklch(0.5 0.01 175);
+    --accent: oklch(0.93 0.02 162);
+    --accent-foreground: oklch(0.32 0.09 162);
+    --destructive: oklch(0.5 0.16 25);
+    --border: oklch(0.91 0.006 175);
+    --input: oklch(0.9 0.006 175);
+    --ring: oklch(0.5 0.11 162);
+    --chart-1: oklch(0.87 0.006 175);
+    --chart-2: oklch(0.556 0.01 175);
+    --chart-3: oklch(0.439 0.01 175);
+    --chart-4: oklch(0.371 0.01 175);
+    --chart-5: oklch(0.269 0.008 175);
+    /* 0.7rem puts rounded-xl at ~16px (cards) and rounded-md at ~9px
+       (compact chips), matching the mockup radii. */
+    --radius: 0.7rem;
+    --sidebar: oklch(1 0 0);
+    --sidebar-foreground: oklch(0.22 0.01 175);
+    --sidebar-primary: oklch(0.5 0.11 162);
+    --sidebar-primary-foreground: oklch(1 0 0);
+    --sidebar-accent: oklch(0.93 0.02 162);
+    --sidebar-accent-foreground: oklch(0.32 0.09 162);
+    --sidebar-border: oklch(0.91 0.006 175);
+    --sidebar-ring: oklch(0.5 0.11 162);
+    /* Sync chip dots: green = on server, amber = queued, gray = local. */
+    --status-synced: oklch(0.68 0.17 155);
+    --status-queued: oklch(0.72 0.14 75);
+    --status-local: oklch(0.62 0.01 175);
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    /* The dark theme is the same geometry with a deliberate palette - not an
+       inversion. Bright green primary with dark text on it, per the mockups. */
+    --background: oklch(0.16 0.008 175);
+    --foreground: oklch(0.95 0.005 175);
+    --card: oklch(0.2 0.008 175);
+    --card-foreground: oklch(0.95 0.005 175);
+    --popover: oklch(0.2 0.008 175);
+    --popover-foreground: oklch(0.95 0.005 175);
+    --primary: oklch(0.72 0.17 155);
+    --primary-foreground: oklch(0.16 0.008 175);
+    --secondary: oklch(0.24 0.008 175);
+    --secondary-foreground: oklch(0.95 0.005 175);
+    --muted: oklch(0.24 0.008 175);
+    --muted-foreground: oklch(0.66 0.01 175);
+    --accent: oklch(0.26 0.03 155);
+    --accent-foreground: oklch(0.88 0.1 155);
+    --destructive: oklch(0.7 0.16 25);
+    --border: oklch(0.3 0.008 175);
+    --input: oklch(0.34 0.008 175);
+    --ring: oklch(0.72 0.17 155);
+    --chart-1: oklch(0.87 0.006 175);
+    --chart-2: oklch(0.66 0.01 175);
+    --chart-3: oklch(0.5 0.01 175);
+    --chart-4: oklch(0.37 0.008 175);
+    --chart-5: oklch(0.27 0.008 175);
+    --sidebar: oklch(0.18 0.008 175);
+    --sidebar-foreground: oklch(0.95 0.005 175);
+    --sidebar-primary: oklch(0.72 0.17 155);
+    --sidebar-primary-foreground: oklch(0.16 0.008 175);
+    --sidebar-accent: oklch(0.26 0.03 155);
+    --sidebar-accent-foreground: oklch(0.88 0.1 155);
+    --sidebar-border: oklch(0.3 0.008 175);
+    --sidebar-ring: oklch(0.72 0.17 155);
+    --status-synced: oklch(0.72 0.17 155);
+    --status-queued: oklch(0.75 0.14 75);
+    --status-local: oklch(0.6 0.01 175);
 }
 
 @layer base {

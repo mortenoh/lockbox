@@ -1,7 +1,9 @@
 // Copyright (c) 2026 Morten Hansen
 // SPDX-License-Identifier: BSD-3-Clause
 
-import { CloudDownload, CloudOff, Download, Pencil, ShieldAlert, Trash2 } from 'lucide-react'
+import type { ReactNode } from 'react'
+
+import { CloudDownload, ShieldAlert, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -63,6 +65,31 @@ interface NoteCardProps {
 }
 
 /**
+ * Sync-state chip: a colored dot plus a mono label.
+ *
+ * The dot carries the meaning at a glance - green is on the server, amber is
+ * queued for upload, gray is inert local metadata - so the state survives
+ * squinting at a washed-out screen in daylight, where an outline-only badge
+ * did not.
+ */
+function StatusChip({ tone, children }: { tone: 'synced' | 'queued' | 'local'; children: ReactNode }) {
+    return (
+        <span className="border-border bg-secondary text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-xs font-medium">
+            <span
+                className={cn(
+                    'size-[7px] rounded-full',
+                    tone === 'synced' && 'bg-status-synced',
+                    tone === 'queued' && 'bg-status-queued',
+                    tone === 'local' && 'bg-status-local',
+                )}
+                aria-hidden
+            />
+            {children}
+        </span>
+    )
+}
+
+/**
  * One note, with enough context to answer "who wrote this, when, and where does
  * it live" without opening anything.
  */
@@ -78,10 +105,10 @@ function NoteCard({ note, owner, onDelete }: NoteCardProps) {
                 <div className="flex items-start gap-3">
                     <span
                         className={cn(
-                            'flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                            'flex size-9 shrink-0 items-center justify-center rounded-full font-mono text-xs font-semibold',
                             mine
-                                ? 'bg-primary/15 text-primary ring-primary/20 ring-1'
-                                : 'bg-muted text-muted-foreground ring-border ring-1',
+                                ? 'bg-accent text-accent-foreground'
+                                : 'bg-muted text-muted-foreground',
                         )}
                         aria-hidden
                     >
@@ -89,7 +116,7 @@ function NoteCard({ note, owner, onDelete }: NoteCardProps) {
                     </span>
 
                     <div className="grid min-w-0 flex-1 gap-0.5">
-                        <span className="leading-tight font-medium break-words">
+                        <span className="leading-tight font-semibold break-words">
                             {unreadable ? 'Cannot decrypt' : note.content?.title}
                         </span>
                         <span className="text-muted-foreground text-xs">
@@ -144,44 +171,30 @@ function NoteCard({ note, owner, onDelete }: NoteCardProps) {
                     )
                 )}
 
-                <div className="flex flex-wrap items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-2">
                     {unreadable ? (
                         <Badge variant="destructive" className="gap-1">
                             <ShieldAlert className="size-3" />
                             unreadable
                         </Badge>
                     ) : note.synced ? (
-                        <Badge variant="outline" className="gap-1 font-normal">
-                            <CloudDownload className="size-3" />
-                            on server
-                        </Badge>
+                        <StatusChip tone="synced">on server</StatusChip>
                     ) : (
-                        <Badge variant="secondary" className="gap-1">
-                            <CloudOff className="size-3" />
-                            this device only
-                        </Badge>
+                        <StatusChip tone="queued">queued</StatusChip>
                     )}
 
-                    <Badge variant="outline" className="gap-1 font-normal">
-                        {note.origin === 'pulled' ? (
-                            <>
-                                <Download className="size-3" />
-                                pulled
-                            </>
-                        ) : (
-                            <>
-                                <Pencil className="size-3" />
-                                written here
-                            </>
-                        )}
-                    </Badge>
+                    <StatusChip tone="local">
+                        {note.origin === 'pulled' ? 'pulled' : 'written here'}
+                    </StatusChip>
 
                     {edited && (
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <Badge variant="outline" className="cursor-default font-normal">
-                                    edited {formatRelative(note.updatedAt)}
-                                </Badge>
+                                <span className="cursor-default">
+                                    <StatusChip tone="local">
+                                        edited {formatRelative(note.updatedAt)}
+                                    </StatusChip>
+                                </span>
                             </TooltipTrigger>
                             <TooltipContent>
                                 Updated {formatFullTime(note.updatedAt)}

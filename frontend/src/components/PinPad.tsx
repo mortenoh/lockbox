@@ -6,6 +6,7 @@ import { useEffect } from 'react'
 import { Delete, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { PIN_LENGTH } from '@/lib/config'
 import { cn } from '@/lib/utils'
 
 interface PinPadProps {
@@ -20,7 +21,6 @@ interface PinPadProps {
      */
     onChange: (update: (previous: string) => string) => void
     onSubmit: () => void
-    maxLength?: number
     disabled?: boolean
     /** Submit button label - this pad is used to both create and unlock. */
     submitLabel?: string
@@ -52,14 +52,13 @@ export function PinPad({
     value,
     onChange,
     onSubmit,
-    maxLength = 6,
     disabled,
     submitLabel = 'Unlock',
     busyLabel = 'Deriving key…',
     submitDisabled = false,
 }: PinPadProps) {
     const press = (digit: string) =>
-        onChange((previous) => (previous.length >= maxLength ? previous : previous + digit))
+        onChange((previous) => (previous.length >= PIN_LENGTH ? previous : previous + digit))
 
     // Half the field hardware is old laptops, where clicking each digit with a
     // trackpad is the slowest possible entry. Listening on the document rather
@@ -81,7 +80,7 @@ export function PinPad({
                 event.preventDefault()
                 onChange((previous) => previous.slice(0, -1))
             } else if (event.key === 'Enter') {
-                if (submitDisabled || value.length < 4) return
+                if (submitDisabled || value.length < PIN_LENGTH) return
                 event.preventDefault()
                 onSubmit()
             }
@@ -98,7 +97,7 @@ export function PinPad({
             {/* Filled dots rather than the digits: shoulder-surfing in a clinic
                 is a real threat, and the count is the only useful feedback. */}
             <div className="flex justify-center gap-3" aria-hidden>
-                {Array.from({ length: maxLength }, (_, i) => (
+                {Array.from({ length: PIN_LENGTH }, (_, i) => (
                     <span
                         key={i}
                         className={cn(
@@ -116,7 +115,7 @@ export function PinPad({
                         type="button"
                         variant="outline"
                         disabled={disabled}
-                        className="h-14 text-lg font-medium"
+                        className="bg-secondary h-14 text-2xl font-semibold"
                         onClick={() => press(digit)}
                     >
                         {digit}
@@ -158,7 +157,7 @@ export function PinPad({
 
             <Button
                 type="button"
-                disabled={disabled || submitDisabled || value.length < 4}
+                disabled={disabled || submitDisabled || value.length < PIN_LENGTH}
                 onClick={onSubmit}
                 // Same column as the keypad, so the pad reads as one block
                 // instead of a narrow grid over a full-width bar.

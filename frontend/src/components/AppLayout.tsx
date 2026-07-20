@@ -25,6 +25,7 @@ import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSidebar } from '@/hooks/use-sidebar'
 import { useSync } from '@/hooks/use-sync'
+import { initials } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 interface NavItem {
@@ -108,10 +109,12 @@ export function AppLayout({
                         collapsed && 'justify-center px-0',
                     )}
                 >
-                    <div className="from-primary/20 to-primary/5 ring-primary/20 flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ring-1">
-                        <KeyRound className="text-primary size-4" aria-hidden />
+                    {/* Solid brand tile: foreground-on-light flips to primary
+                        green in dark, per the mockups. */}
+                    <div className="bg-foreground text-background dark:bg-primary dark:text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg">
+                        <KeyRound className="size-4" aria-hidden />
                     </div>
-                    {!collapsed && <span className="text-lg font-semibold">Lockbox</span>}
+                    {!collapsed && <span className="text-lg font-bold tracking-tight">Lockbox</span>}
                 </div>
 
                 <nav className="flex flex-col gap-1 px-2 py-2">
@@ -125,25 +128,38 @@ export function AppLayout({
                                 aria-label={item.label}
                                 className={({ isActive }) =>
                                     cn(
-                                        'relative flex items-start gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                                        // The active rail is a left border, not an
+                                        // overlay - it survives collapsed mode and
+                                        // gives the asymmetric rounding from the
+                                        // mockups for free.
+                                        'flex items-start gap-3 rounded-r-lg rounded-l-[4px] border-l-[3px] px-3 py-2 text-left text-sm transition-colors',
                                         collapsed && 'justify-center px-0 py-2.5',
                                         isActive
-                                            ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                                            : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
+                                            ? 'border-sidebar-primary bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                                            : 'text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground border-transparent',
                                     )
                                 }
                             >
                                 {({ isActive }) => (
                                     <>
-                                        {/* Active marker stays legible when labels are hidden. */}
-                                        {isActive && (
-                                            <span className="bg-primary absolute inset-y-1.5 left-0 w-0.5 rounded-full" />
-                                        )}
-                                        <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
+                                        <Icon
+                                            className={cn(
+                                                'mt-0.5 size-4 shrink-0',
+                                                isActive && 'text-sidebar-accent-foreground',
+                                            )}
+                                            aria-hidden
+                                        />
                                         {!collapsed && (
                                             <span className="grid">
                                                 <span>{item.label}</span>
-                                                <span className="text-muted-foreground text-xs">
+                                                <span
+                                                    className={cn(
+                                                        'text-xs',
+                                                        isActive
+                                                            ? 'text-sidebar-accent-foreground/75'
+                                                            : 'text-muted-foreground',
+                                                    )}
+                                                >
                                                     {item.hint}
                                                 </span>
                                             </span>
@@ -171,15 +187,28 @@ export function AppLayout({
                 <div className="flex-1" />
 
                 {!collapsed && (
-                    <div className="text-muted-foreground border-t px-4 py-3 text-xs">
-                        <p className="text-foreground/80 font-medium">{owner}</p>
-                        <p className="mt-1">Protects a lost device, not a compromised session.</p>
+                    <div className="flex items-center gap-3 border-t px-4 py-3">
+                        <span
+                            className="bg-accent text-accent-foreground flex size-9 shrink-0 items-center justify-center rounded-full font-mono text-xs font-semibold"
+                            aria-hidden
+                        >
+                            {initials(owner)}
+                        </span>
+                        <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold">{owner}</p>
+                            <p className="text-muted-foreground text-xs">Unlocked on this device</p>
+                        </div>
                     </div>
                 )}
             </aside>
 
             <div className="flex min-w-0 flex-1 flex-col">
-                <header className="bg-background/95 supports-[backdrop-filter]:bg-background/70 sticky top-0 z-10 border-b backdrop-blur">
+                {/* Solid surface, no backdrop-blur: blur is one of the most
+                    expensive things to composite on the decade-old integrated
+                    GPUs this app actually runs on, and the redesign's header
+                    is opaque anyway. bg-sidebar matches the mockup exactly
+                    (white in light, one step above the page in dark). */}
+                <header className="bg-sidebar sticky top-0 z-10 border-b">
                     <div className="flex items-center gap-2 px-4 py-2.5 md:px-6">
                         {/* Lives in the page header, not the sidebar, so it keeps a
                             fixed screen position instead of moving when clicked.
@@ -218,7 +247,10 @@ export function AppLayout({
 
                         <Tooltip>
                             <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={onLock}>
+                                {/* A bordered chip in the mockups - the one
+                                    always-available security action earns more
+                                    presence than a ghost icon. */}
+                                <Button variant="outline" size="sm" onClick={onLock}>
                                     <Lock className="size-4" />
                                     <span className="sr-only lg:not-sr-only">Lock</span>
                                 </Button>

@@ -27,6 +27,19 @@ import type { KdfId, KdfParams } from '@/lib/crypto'
 export const DEFAULT_KDF: KdfId = 'argon2id'
 
 /**
+ * Digits in a PIN. Static per deployment: every pad shows exactly this many
+ * slots and requires exactly this many digits.
+ *
+ * The type is a union, not `number`, on purpose: the PIN pad's dot row and
+ * layout are designed for exactly these two lengths, so any other value
+ * would break the UI before it broke the crypto. Changing this on a device
+ * with existing vaults changes what the unlock pad accepts - the PIN itself
+ * is never persisted, so there is nothing to migrate.
+ */
+export type PinLength = 4 | 6
+export const PIN_LENGTH: PinLength = 4
+
+/**
  * PBKDF2 iteration count (OWASP 2026 guidance for HMAC-SHA256).
  *
  * Retained for two reasons: opening vaults created before Argon2id, and

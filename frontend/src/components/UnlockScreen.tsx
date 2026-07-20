@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Fingerprint, KeyRound, Loader2, Plus, ShieldCheck, Trash2, UserRound } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { PinPad } from '@/components/PinPad'
 import {
@@ -22,7 +23,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { DEFAULT_KDF } from '@/lib/config'
+import { DEFAULT_KDF, PIN_LENGTH } from '@/lib/config'
 import {
     adoptSessionKey,
     createVault,
@@ -318,9 +319,55 @@ interface UnlockFormProps {
     onUnlocked: (vault: VaultRecord) => void
 }
 
+/**
+ * Browser connectivity, live.
+ *
+ * Deliberately navigator.onLine and not the sync engine's richer state: the
+ * vault is locked here, sync is not running, and the chip only has to answer
+ * "will pulling work once I'm in".
+ */
+function useOnline() {
+    const [online, setOnline] = useState(navigator.onLine)
+    useEffect(() => {
+        const up = () => setOnline(true)
+        const down = () => setOnline(false)
+        window.addEventListener('online', up)
+        window.addEventListener('offline', down)
+        return () => {
+            window.removeEventListener('online', up)
+            window.removeEventListener('offline', down)
+        }
+    }, [])
+    return online
+}
+
+/** Brand row shared by the unlock card: mark, wordmark, connectivity chip. */
+function BrandRow() {
+    const online = useOnline()
+    return (
+        <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+                <div className="bg-foreground text-background dark:bg-primary dark:text-primary-foreground flex size-7 items-center justify-center rounded-lg">
+                    <KeyRound className="size-4" aria-hidden />
+                </div>
+                <span className="font-bold tracking-tight">Lockbox</span>
+            </div>
+            <span className="border-border bg-secondary text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px] font-medium tracking-wider uppercase">
+                <span
+                    className={cn(
+                        'size-[7px] rounded-full',
+                        online ? 'bg-status-synced' : 'bg-status-local',
+                    )}
+                    aria-hidden
+                />
+                {online ? 'Online' : 'Offline'}
+            </span>
+        </div>
+    )
+}
+
 function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFormProps) {
     const [secret, setSecret] = useState('')
-    const [error, setError] = useState<string | null>(null)
     const [busy, setBusy] = useState<'secret' | 'biometric' | null>(null)
     const submitting = useRef(false)
 
@@ -342,18 +389,20 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
         if (submitting.current) return
         submitting.current = true
 
-        setError(null)
         setBusy('secret')
         try {
             if (await unlockVault(secret, vault)) {
                 await db.requestPersistence()
                 onUnlocked(vault)
             } else {
-                setError('Wrong PIN.')
+                // A toast, not an inline alert: the panel used to appear below
+                // the pad and shove the layout around. The cleared dots are
+                // the in-place signal; the toast carries the words.
+                toast.error('Wrong PIN.')
                 setSecret('')
             }
         } catch (err) {
-            setError(`Could not unlock: ${err instanceof Error ? err.message : String(err)}`)
+            toast.error(`Could not unlock: ${err instanceof Error ? err.message : String(err)}`)
         } finally {
             submitting.current = false
             setBusy(null)
@@ -362,13 +411,12 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
 
     async function submitBiometric() {
         if (!vault.prf) return
-        setError(null)
         setBusy('biometric')
         try {
             let reason: string | null = null
             const dek = await unlockWithBiometric(vault.prf, (r) => (reason = r))
             if (!dek) {
-                setError(reason ?? 'Biometric unlock was cancelled or unavailable.')
+                toast.error(reason ?? 'Biometric unlock was cancelled or unavailable.')
                 return
             }
             adoptSessionKey(dek)
@@ -381,14 +429,15 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
 
     return (
         <Card className="shadow-lg">
-            <CardHeader>
+            <CardHeader className="grid gap-4">
+                <BrandRow />
                 <div className="flex items-center gap-3">
-                    <span className="bg-primary/15 text-primary ring-primary/20 flex size-9 items-center justify-center rounded-full text-sm font-semibold ring-1">
+                    <span className="bg-accent text-accent-foreground flex size-9 items-center justify-center rounded-full font-mono text-sm font-semibold">
                         {initials(vault.owner)}
                     </span>
                     <div className="grid">
                         <CardTitle className="text-lg">{vault.owner}</CardTitle>
-                        <CardDescription>Unlock to decrypt this device&rsquo;s notes</CardDescription>
+                        <CardDescription>Enter PIN to decrypt this device&rsquo;s notes</CardDescription>
                     </div>
                 </div>
             </CardHeader>
@@ -444,17 +493,17 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
                     </Button>
                 )}
 
-                {error && (
-                    <Alert variant="destructive">
-                        <AlertDescription>{error}</AlertDescription>
-                    </Alert>
-                )}
-
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                     <Button variant="ghost" size="sm" onClick={onBack}>
                         <UserRound className="size-4" />
                         Switch user
                     </Button>
+                    {/* Trust microcopy from the mockups: state the mechanism,
+                        quietly, where a person deciding whether to type their
+                        PIN is actually looking. */}
+                    <span className="text-muted-foreground/70 font-mono text-[11px]">
+                        AES-256 &middot; keys never leave device
+                    </span>
                 </div>
             </CardContent>
         </Card>
@@ -480,15 +529,16 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
 
     // The submit button is disabled until both fields are valid, so `create`
     // can only ever run on a complete form. Nothing here re-checks them.
+    // New PINs are exactly PIN_LENGTH digits; only unlocking is lenient.
     const trimmedOwner = owner.trim()
-    const isComplete = trimmedOwner.length > 0 && secret.length >= 4
+    const isComplete = trimmedOwner.length > 0 && secret.length >= PIN_LENGTH
 
     // The one incomplete state worth shouting about: the PIN is done but the
     // name is not, so the user thinks they are finished and the hint at the
     // bottom of the card is easy to miss. Marking the field itself is what
     // points them at the right place. An untouched form stays unmarked - red
     // borders before anyone typed anything is scolding, not guidance.
-    const nameMissing = secret.length >= 4 && trimmedOwner.length === 0
+    const nameMissing = secret.length >= PIN_LENGTH && trimmedOwner.length === 0
 
     async function create() {
         // A ref, not the `busy` state: setBusy only takes effect on the next
@@ -583,7 +633,7 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
                                 <>
                                     {!trimmedOwner
                                         ? 'Enter a name to continue.'
-                                        : 'Enter at least four digits.'}
+                                        : `Enter ${PIN_LENGTH} digits.`}
                                 </>
                             ) : isCommonPin(secret) ? (
                                 <>
