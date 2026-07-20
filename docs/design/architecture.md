@@ -197,7 +197,7 @@ sequenceDiagram
     DB-->>UI: {salt, wrapIv, wrappedDek, kdf, params, createdAt}
     U->>UI: passphrase
     UI->>C: unlockVault(passphrase, vault)
-    Note over C: vaultKdf() reads the recorded algorithm,<br/>Argon2id (128 MiB, t=3, p=1) by default
+    Note over C: vaultKdf() reads the recorded algorithm and params,<br/>Argon2id calibrated to this device at creation
     C->>C: unwrapKey(wrappedDek, KEK)
     alt correct passphrase
         C-->>UI: true (DEK held in memory, non-extractable)

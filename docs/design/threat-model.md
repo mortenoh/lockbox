@@ -49,9 +49,10 @@ argument.
     **Result:** they get ciphertext. The `notes` object store contains AES-256-GCM
     blobs. The `vault` store contains a salt, an IV, a KDF descriptor, and a DEK wrapped
     under a key that exists nowhere on the device. Recovering plaintext requires guessing
-    the passphrase, at a cost of one full Argon2id derivation per guess — 128 MiB of memory
-    and three passes over it, which is what makes GPU parallelism expensive rather than
-    nearly free.
+    the passphrase, at a cost of one full Argon2id derivation per guess — the memory and
+    pass counts recorded in the vault (from 128 MiB / 3 passes on capable hardware down to
+    a 19 MiB / 2 pass floor on the weakest devices), which is what makes GPU parallelism
+    expensive rather than nearly free.
 
 This is the scenario that motivated the project: a field laptop containing months of
 health records is stolen from a vehicle. Without this layer, the thief opens the browser

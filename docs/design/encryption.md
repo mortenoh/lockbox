@@ -23,7 +23,7 @@ the typed passphrase, the DEK is unwrapped, and it is held in memory as a non-ex
 
 ```mermaid
 flowchart LR
-    P["Passphrase<br/>(typed, never stored)"] -->|"Argon2id<br/>128 MiB, t=3, p=1 + 16-byte salt"| KEK["KEK<br/>AES-GCM 256<br/>non-extractable"]
+    P["Passphrase<br/>(typed, never stored)"] -->|"Argon2id<br/>device-calibrated params + 16-byte salt"| KEK["KEK<br/>AES-GCM 256<br/>non-extractable"]
     DEK0["DEK<br/>random AES-GCM 256"] -->|"wrapKey"| W["wrappedDek<br/>(base64url)"]
     KEK -->|wraps| W
     W -->|"stored"| IDB[("IndexedDB<br/>vault store")]
@@ -95,21 +95,39 @@ the single most alarming possible failure mode for an encrypted store.
 **Argon2id is the default for all new vaults.** PBKDF2 is retained only to open
 pre-existing vaults and to serve as the comparison arm in the KDF Lab.
 
+The parameters are not fixed: they are **calibrated on the device when the vault is
+created**, because the deployment target includes decade-old laptops and 1-2 GB Android
+phones that can be 10-25x slower than a developer machine. All tunables live in one place,
+`frontend/src/lib/config.ts`:
+
 ```typescript
-export const ARGON2ID_PARAMS = {
-    /** KiB of memory per guess. The parameter that actually hurts attackers. */
-    memorySize: 131_072, // 128 MiB
-    /** Passes over memory. Raises cost linearly for attacker and defender alike. */
-    iterations: 3,
-    /** Lanes. Kept at 1 - browsers give us no reliable parallelism here. */
-    parallelism: 1,
-} as const
+/** Candidate parameters, strongest first. Calibration picks the strongest
+ *  tier the device can derive within TARGET_UNLOCK_MS. */
+export const ARGON2ID_LADDER: readonly Required<KdfParams>[] = [
+    { memorySize: 131_072, iterations: 3, parallelism: 1 }, // 128 MiB
+    { memorySize: 65_536, iterations: 3, parallelism: 1 }, //   64 MiB
+    { memorySize: 32_768, iterations: 3, parallelism: 1 }, //   32 MiB
+    { memorySize: 19_456, iterations: 2, parallelism: 1 }, //   19 MiB - OWASP minimum
+]
+
+/** The most one KDF derivation may be predicted to take (per unlock). */
+export const TARGET_UNLOCK_MS = 1_000
 
 /** Retained for legacy vaults and as the KDF Lab's comparison arm. */
 export const PBKDF2_ITERATIONS = 600_000
 
 export const DEFAULT_KDF: KdfId = 'argon2id'
 ```
+
+`calibrateKdfParams()` (in `crypto.ts`) times one derivation at the floor tier, scales
+that measurement by each tier's memory-times-passes cost, and picks the strongest tier
+predicted to stay inside the budget. Devices reporting little RAM via
+`navigator.deviceMemory` are additionally capped so a 128 MiB allocation is never even
+attempted on a 1-2 GB phone, and if an allocation fails anyway, vault creation steps down
+the ladder instead of failing. The floor is OWASP's minimum recommendation and is used
+even when it alone exceeds the budget - calibration trades strength for speed only down
+to there. The chosen parameters are recorded in the vault record, so unlocking never
+calibrates again.
 
 One function derives the KEK either way, so the rest of the module never branches on the
 algorithm:
@@ -142,8 +160,8 @@ narrowest capability that does the job.
 | Parameter | Value | Rationale |
 | --- | --- | --- |
 | KDF (default) | **Argon2id** via `hash-wasm` | Memory-hard. Winner of the Password Hashing Competition. Costs ~40 KB of WASM, bundled with the app JS and precached, so unlock still works fully offline |
-| Argon2id memory | 131,072 KiB (128 MiB) | The parameter that actually hurts an attacker. Every guess must allocate 128 MiB, which caps how many fit on a GPU |
-| Argon2id iterations | 3 | Passes over memory. Scales cost linearly for attacker and defender alike |
+| Argon2id memory | Calibrated per device: 128 MiB ceiling, 19 MiB floor | The parameter that actually hurts an attacker. Every guess must allocate this much, which caps how many fit on a GPU |
+| Argon2id iterations | 3 (2 at the floor tier) | Passes over memory. Scales cost linearly for attacker and defender alike |
 | Argon2id parallelism | 1 | Browsers give no reliable parallelism here, so lanes buy nothing |
 | KDF (legacy) | PBKDF2-HMAC-SHA256, 600,000 iterations | Native to every browser. Opens vaults created before Argon2id; not used for new ones |
 | Salt | 16 random bytes, per vault | Defeats precomputed rainbow tables; regenerated on every passphrase change |
@@ -156,8 +174,9 @@ narrowest capability that does the job.
 
 PBKDF2 is CPU-hard but not memory-hard. A GPU can run tens of thousands of SHA-256 chains
 in parallel at almost no memory cost per lane, so an attacker's advantage over one browser
-thread is enormous. Argon2id forces every guess to allocate 128 MiB, which caps how many
-guesses fit on a card and shrinks that advantage by orders of magnitude.
+thread is enormous. Argon2id forces every guess to allocate real memory - up to 128 MiB,
+never less than 19 MiB - which caps how many guesses fit on a card and shrinks that
+advantage by orders of magnitude.
 
 This only matters for **weak passphrases**. Against a diceware-style passphrase, PBKDF2 at
 600k is already unbreakable. Against `summer2026`, Argon2id might buy weeks where PBKDF2
@@ -188,7 +207,7 @@ export async function benchmarkKdf(
     | --- | --- | --- |
     | Argon2id | 64 MiB, t=3, p=1 | 121 ms (previous default, too cheap) |
     | Argon2id | 96 MiB, t=3, p=1 | 197 ms |
-    | Argon2id | **128 MiB, t=3, p=1** | **~263 ms** ← current default |
+    | Argon2id | **128 MiB, t=3, p=1** | **~263 ms** ← the ceiling tier |
     | Argon2id | 128 MiB, t=4, p=1 | 355 ms |
     | Argon2id | 192 MiB, t=3, p=1 | 402 ms |
     | PBKDF2-HMAC-SHA256 | 600,000 iterations | ~54–67 ms |
@@ -197,10 +216,11 @@ export async function benchmarkKdf(
     window on a laptop while doubling the memory an attacker must commit per guess.
 
     A low-end Android tablet — the device this project is actually about — will be several
-    times slower, and it is the device that should set the parameters further. Do not raise
-    them on a developer laptop alone. Run the KDF Lab on the weakest hardware you must
-    support. Existing vaults keep their recorded parameters, so a change only affects new
-    ones (or re-wraps via `changePassphrase`).
+    times slower, which is why these numbers only chose the *ceiling*: vault creation runs
+    the same measurement on the actual device (`calibrateKdfParams`) and steps down the
+    ladder until the predicted unlock fits the budget. Existing vaults keep their recorded
+    parameters, so ladder changes only affect new ones (or re-wraps via
+    `changePassphrase`).
 
 ### IV uniqueness
 

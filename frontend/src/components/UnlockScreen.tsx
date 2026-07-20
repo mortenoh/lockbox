@@ -19,8 +19,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { DEFAULT_KDF } from '@/lib/config'
 import {
-    DEFAULT_KDF,
     adoptSessionKey,
     createVault,
     isCommonPin,
