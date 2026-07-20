@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Morten Hansen
+# SPDX-License-Identifier: BSD-3-Clause
+
 """FastAPI application: serves the PWA and a small sync API.
 
 Two parallel note APIs exist so the two sync strategies can be compared

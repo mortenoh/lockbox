@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Morten Hansen
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Persistence for note records.
 
 A JSON file on disk is plenty for a learning demo: it survives restarts, and it

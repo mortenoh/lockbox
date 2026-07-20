@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Morten Hansen
+// SPDX-License-Identifier: BSD-3-Clause
+
 /**
  * Bytes <-> base64url conversion, shared by the crypto and WebAuthn layers.
  *

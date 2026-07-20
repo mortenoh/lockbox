@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Morten Hansen
+// SPDX-License-Identifier: BSD-3-Clause
+
 /**
  * Sync engine: drains the local outbox to the server when it is reachable.
  *

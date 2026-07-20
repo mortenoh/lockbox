@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Morten Hansen
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Wire models for the sync API.
 
 Two shapes travel over the wire, and the difference between them is the whole

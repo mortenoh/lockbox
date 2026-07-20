@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Morten Hansen
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Shared display formatting helpers. */
 
 /** Format an epoch-milliseconds timestamp for compact display. */

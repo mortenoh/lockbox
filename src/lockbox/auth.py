@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Morten Hansen
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Bearer-token authentication for the sync API.
 
 Deliberately minimal, and deliberately not pretending to be more than it is: a
