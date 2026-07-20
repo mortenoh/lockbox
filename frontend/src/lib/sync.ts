@@ -498,8 +498,9 @@ export async function fetchServerState(): Promise<{
  */
 export async function pull(): Promise<number> {
     // Never merge remote state while a drain is mid-flight: that is the race
-    // that lets a pull overwrite an unsent local note.
-    await waitWhile(() => draining)
+    // that lets a pull overwrite an unsent local note. If the drain is stuck
+    // (a stalled fetch), give up rather than merge concurrently.
+    if (!(await waitWhile(() => draining))) return 0
 
     if (!activeOwnerId) return 0
     if ((await probeServer()) !== 'ok') return 0
@@ -595,8 +596,6 @@ async function pullPlaintext(): Promise<number> {
             if (existing) {
                 await db.deleteNote(ownerId, remote.id)
                 changed += 1
-            } else if (decision === 'apply-and-dequeue') {
-                // No note to delete, but outbox still needed clearing.
             }
             if (decision === 'apply-and-dequeue') {
                 await db.dequeueForNote(ownerId, remote.id)
@@ -677,11 +676,20 @@ async function pullEncrypted(): Promise<number> {
     return changed
 }
 
-/** Spin until a predicate is false. Used to keep pull behind an in-flight drain. */
-async function waitWhile(predicate: () => boolean): Promise<void> {
+/**
+ * Wait until a predicate is false. Used to keep pull behind an in-flight drain.
+ *
+ * Bounded: a drain wedged on a stalled fetch must not pin every queued pull
+ * trigger forever. Returns false when the wait was abandoned, so callers can
+ * bail instead of proceeding concurrently with whatever is stuck.
+ */
+async function waitWhile(predicate: () => boolean, maxWaitMs = 10_000): Promise<boolean> {
+    const deadline = Date.now() + maxWaitMs
     while (predicate()) {
+        if (Date.now() >= deadline) return false
         await new Promise((resolve) => setTimeout(resolve, 5))
     }
+    return true
 }
 
 /**
@@ -690,11 +698,14 @@ async function waitWhile(predicate: () => boolean): Promise<void> {
  * Guarded by its own timestamp rather than piggybacking on the drain interval,
  * so a burst of local writes cannot trigger a burst of full fetches. Always
  * waits for an in-flight drain first - the second half of drain-then-pull.
+ *
+ * @returns whether a pull actually ran, so a manual trigger can tell "nothing
+ * new" apart from "skipped because one was already in flight".
  */
-async function maybePull(minIntervalMs = PULL_INTERVAL_MS): Promise<void> {
-    await waitWhile(() => draining)
-    if (pulling) return
-    if (Date.now() - lastPullAttempt < minIntervalMs) return
+async function maybePull(minIntervalMs = PULL_INTERVAL_MS): Promise<boolean> {
+    if (!(await waitWhile(() => draining))) return false
+    if (pulling) return false
+    if (Date.now() - lastPullAttempt < minIntervalMs) return false
 
     pulling = true
     lastPullAttempt = Date.now()
@@ -708,6 +719,7 @@ async function maybePull(minIntervalMs = PULL_INTERVAL_MS): Promise<void> {
     } finally {
         pulling = false
     }
+    return true
 }
 
 /**
@@ -716,13 +728,15 @@ async function maybePull(minIntervalMs = PULL_INTERVAL_MS): Promise<void> {
  * Every automatic trigger goes through here so drain and pull never race. A
  * post-write flush that only needs to upload can still call {@link drain}
  * alone.
+ *
+ * @returns whether the pull half actually ran (see {@link maybePull}).
  */
 export async function runSyncCycle(opts?: {
     forceDrain?: boolean
     minPullIntervalMs?: number
-}): Promise<void> {
+}): Promise<boolean> {
     await drain({ force: opts?.forceDrain })
-    await maybePull(opts?.minPullIntervalMs ?? PULL_INTERVAL_MS)
+    return maybePull(opts?.minPullIntervalMs ?? PULL_INTERVAL_MS)
 }
 
 /** Fetch remote changes now, regardless of the interval. */
