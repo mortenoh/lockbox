@@ -95,10 +95,11 @@ function createStores(db: IDBDatabase): void {
 /**
  * Open (and if needed create/reset) the database.
  *
- * There is no migration path. A fresh install creates the v3 shape outright,
- * and any pre-v3 database is dropped and recreated in that same shape rather
- * than migrated. The v1 and v2 schemas only ever existed on development
- * machines - the project shipped with no users - so there is no data to keep.
+ * There is no migration path. A fresh install creates the current shape
+ * outright. Any schema bump drops existing stores and recreates that shape —
+ * pre-release only, while no real users keep local data. The version number
+ * stays at 3 so machines that already opened a v3 database do not hit
+ * VersionError; lowering it would.
  */
 function openDb(): Promise<IDBDatabase> {
     if (dbPromise) return dbPromise
@@ -134,12 +135,12 @@ function openDb(): Promise<IDBDatabase> {
             const db = request.result
             const oldVersion = event.oldVersion
 
-            // A pre-v3 database (1 <= oldVersion < 3) is reset, not migrated:
-            // drop whatever stores exist, then recreate the v3 shape below. The
-            // v1 and v2 schemas only ever existed on development machines - the
-            // project shipped with no users - so old dev data is dropped rather
-            // than migrated. A fresh install (oldVersion < 1) skips straight to
-            // creating that shape.
+            // Pre-release policy: any schema bump wipes local stores, then
+            // createStores builds the current shape. That is only defensible
+            // while no real users keep data here - the project shipped with
+            // none. A fresh install (oldVersion < 1) has nothing to drop.
+            // Before shipping to people who keep vaults, replace this with
+            // real step migrations (and stop calling createStores on every bump).
             if (oldVersion >= 1) {
                 for (const name of Array.from(db.objectStoreNames)) {
                     db.deleteObjectStore(name)

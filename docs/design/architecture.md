@@ -223,11 +223,10 @@ IndexedDB database `lockbox`, version 3, three object stores:
 | `outbox` | `seq` (autoIncrement), index on `ownerId` | `{seq, op, noteId, payload, status, attempts, lastError, queuedAt, ownerId}` | `payload` carries ciphertext |
 
 ```typescript
-// One schema, version 3. A fresh install creates it. A pre-release dev
-// database (1 <= oldVersion < 3) is dropped and recreated, not migrated:
-// no user data ever existed before v3, so there is nothing to preserve.
-// (Array.from matters: objectStoreNames is a live list that shrinks as
-// stores are deleted.)
+// One schema, version 3. A fresh install creates it. Pre-release policy:
+// any schema bump drops existing stores and recreates the current shape —
+// only defensible while no real users keep data. (Array.from matters:
+// objectStoreNames is a live list that shrinks as stores are deleted.)
 if (oldVersion >= 1) {
     for (const name of Array.from(db.objectStoreNames)) {
         db.deleteObjectStore(name)
