@@ -66,3 +66,35 @@ test.describe('blocked database upgrade', () => {
         expect(yielded).toBe('upgraded')
     })
 })
+
+test.describe('storage escape hatch', () => {
+    test('a permanently blocked open still resolves to an actionable screen', async ({ page }) => {
+        // The worst case: another connection holds the database and never lets
+        // go. onblocked is not guaranteed to fire promptly, so a deadline turns
+        // the hang into something the user can act on.
+        await page.goto('/')
+        await wipeDevice(page)
+        await page.goto('/')
+
+        await page.evaluate(async () => {
+            // Hold a higher version open and never close it.
+            await new Promise<void>((resolve) => {
+                const req = indexedDB.open('lockbox', 99)
+                req.onsuccess = () => {
+                    ;(window as unknown as { held: IDBDatabase }).held = req.result
+                    resolve()
+                }
+                req.onerror = () => resolve()
+                req.onblocked = () => resolve()
+            })
+        })
+
+        await page.reload()
+
+        // Within the open deadline, not forever.
+        await expect(page.getByText('Cannot open local storage')).toBeVisible({ timeout: 20_000 })
+        // And a way out that does not involve DevTools.
+        await expect(page.getByRole('button', { name: 'Reset local data' })).toBeVisible()
+        await expect(page.getByRole('button', { name: 'Reload' })).toBeVisible()
+    })
+})

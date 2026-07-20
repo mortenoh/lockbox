@@ -68,6 +68,9 @@ export interface OutboxEntry {
     ownerId: string
 }
 
+/** How long to wait for the database before giving up and saying so. */
+const OPEN_TIMEOUT_MS = 5_000
+
 let dbPromise: Promise<IDBDatabase> | null = null
 
 /**
@@ -84,6 +87,30 @@ function openDb(): Promise<IDBDatabase> {
 
     dbPromise = new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION)
+
+        // A hard deadline on opening.
+        //
+        // `onblocked` is documented to fire when another connection holds an
+        // older version, but it is not guaranteed to fire promptly - or at all -
+        // if a versionchange transaction stalls midway. Without a timeout the
+        // promise simply never settles, and the app waits forever behind a
+        // spinner. Any outcome the user can act on beats that.
+        const deadline = setTimeout(() => {
+            reject(
+                new Error(
+                    'Timed out opening the local database. This usually means another tab ' +
+                        'still has it open on an older version - close every other tab of this ' +
+                        'app and reload.',
+                ),
+            )
+        }, OPEN_TIMEOUT_MS)
+
+        const settle = <T>(fn: (value: T) => void) => {
+            return (value: T) => {
+                clearTimeout(deadline)
+                fn(value)
+            }
+        }
 
         request.onupgradeneeded = (event) => {
             const db = request.result
@@ -176,7 +203,7 @@ function openDb(): Promise<IDBDatabase> {
             }
         }
 
-        request.onsuccess = () => {
+        request.onsuccess = settle(() => {
             const db = request.result
 
             // Another tab wanting a newer version cannot upgrade while this
@@ -188,23 +215,23 @@ function openDb(): Promise<IDBDatabase> {
             }
 
             resolve(db)
-        }
+        })
 
-        request.onerror = () => reject(request.error)
+        request.onerror = settle(() => reject(request.error))
 
         // Fires when an upgrade cannot start because another connection is
         // still open on the old version. Previously unhandled, which meant the
         // promise simply never settled: every caller awaited forever and the UI
         // rendered nothing at all. A hang is worse than an error, because there
         // is nothing to show the user and nothing to act on.
-        request.onblocked = () => {
+        request.onblocked = settle(() => {
             reject(
                 new Error(
                     'The database is open in another tab running an older version of this app. ' +
                         'Close the other tabs and reload.',
                 ),
             )
-        }
+        })
     })
 
     // A failed open must not be cached, or every later call reuses the same
@@ -505,4 +532,29 @@ export async function requestPersistence(): Promise<boolean> {
     if (!navigator.storage?.persist) return false
     if (await navigator.storage.persisted()) return true
     return navigator.storage.persist()
+}
+
+/**
+ * Delete the whole database.
+ *
+ * The escape hatch of last resort, offered in the UI when the database cannot
+ * be opened at all. Destructive - every local vault and any unsynced note goes
+ * with it - but the alternative on offer is an app that never starts, and notes
+ * that already reached the server can be recovered by signing in again and
+ * pulling.
+ *
+ * Resolves rather than hanging if the delete is itself blocked, so the button
+ * always does something.
+ */
+export async function destroyDatabase(): Promise<void> {
+    dbPromise = null
+
+    await new Promise<void>((resolve) => {
+        const request = indexedDB.deleteDatabase(DB_NAME)
+        const done = () => resolve()
+        request.onsuccess = done
+        request.onerror = done
+        request.onblocked = done
+        setTimeout(done, 3_000)
+    })
 }

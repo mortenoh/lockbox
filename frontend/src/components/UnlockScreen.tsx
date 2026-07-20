@@ -153,10 +153,34 @@ function StorageFailure({ message }: { message: string }) {
                 </CardHeader>
                 <CardContent className="grid gap-3">
                     <Button onClick={() => window.location.reload()}>Reload</Button>
+
                     <p className="text-muted-foreground text-xs">
-                        If this persists, close every other tab of this app and reload. Notes that
-                        have already synced stay recoverable from the server.
+                        Close every other tab of this app first — one holding the database open on
+                        an older version is the usual cause.
                     </p>
+
+                    <Separator />
+
+                    {/* Last resort, in the app rather than in DevTools. Nobody
+                        should have to be told to open developer tools to make a
+                        page load. */}
+                    <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={async () => {
+                            const ok = window.confirm(
+                                'Delete all local data and start over?\n\n' +
+                                    'Every vault on this device is removed, along with any note ' +
+                                    'that has not synced yet. Notes already on the server can be ' +
+                                    'recovered by signing in again and pulling.',
+                            )
+                            if (!ok) return
+                            await db.destroyDatabase()
+                            window.location.reload()
+                        }}
+                    >
+                        Reset local data
+                    </Button>
                 </CardContent>
             </Card>
         </div>

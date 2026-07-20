@@ -369,3 +369,25 @@ Three things were wrong at once, and all three are worth fixing anywhere:
     Storage and seeing no difference is itself strong evidence, and it is the
     step most likely to be skipped because the first two causes made it look
     like a caching problem.
+
+### Deadlines, not faith in events
+
+`onblocked` is the documented way to learn that a database upgrade cannot start.
+It is also not something to rely on alone: it may fire late, or not at all if a
+versionchange transaction stalls partway. Handling it was an improvement over
+handling nothing, and still left a spinner that could run forever.
+
+So `openDb` carries a deadline. If nothing settles within it, the promise
+rejects with a message naming the likely cause. The general form is worth
+keeping:
+
+> Any browser API that can hang deserves a timeout, because a hang has no
+> failure path. There is nothing to catch, nothing to display, and nothing for
+> the user to do.
+
+The error screen also offers **Reset local data**, which deletes the database
+outright. It is destructive — local vaults and unsynced notes go with it — but
+the state it recovers from is an app that will not start, and anything already
+synced comes back by signing in and pulling. The point is that the escape hatch
+is *in the app*: needing DevTools to make a page load is not something a user
+can be asked to do.
