@@ -52,19 +52,19 @@ help:
 
 install:
 	@echo ">>> Installing dependencies"
-	@$(UV) sync --all-extras
+	@$(UV) sync --all-groups
 
 lint:
 	@echo ">>> Running formatter and linter"
 	@$(UV) run ruff format .
 	@$(UV) run ruff check . --fix
 	@echo ">>> Running type checkers"
-	@$(UV) run mypy --explicit-package-bases src tests
-	@$(UV) run pyright
+	@$(UV) run python -m mypy --explicit-package-bases src tests
+	@$(UV) run python -m pyright
 
 test:
 	@echo ">>> Running tests"
-	@$(UV) run pytest -q
+	@$(UV) run python -m pytest -q
 
 # Starts its own server on a throwaway data file, so it never touches ./data.
 test-e2e:
@@ -73,9 +73,9 @@ test-e2e:
 
 coverage:
 	@echo ">>> Running tests with coverage"
-	@$(UV) run coverage run -m pytest -q
-	@$(UV) run coverage report
-	@$(UV) run coverage xml
+	@$(UV) run python -m coverage run -m pytest -q
+	@$(UV) run python -m coverage report
+	@$(UV) run python -m coverage xml
 
 serve:
 	@echo ">>> Serving on http://127.0.0.1:$(PORT)"
