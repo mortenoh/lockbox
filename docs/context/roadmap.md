@@ -181,6 +181,68 @@ field, since existing records were not encrypted with AAD.
 Applies to the encrypted mode and to local storage integrity only; in plaintext mode the
 server holds readable records and integrity there is the platform's concern.
 
+### Design pass via Claude Design
+**Effort: M · Sequenced after reviewer feedback, deliberately.**
+
+Every UI defect found so far — a keypad that jumped mid-entry, a
+double-submittable button, a native `window.confirm`, an access-token field for
+authentication that was not enabled — was found by looking at the running app,
+not by the test suite. That is not a gap the suite can close: whether an element
+belongs on a page is not a question it asks.
+
+[claude.ai/design](https://claude.ai/design) hosts design-system projects that
+can be annotated directly, with the `DesignSync` tool and `/design-sync` skill
+keeping a local component library in sync. Mechanically:
+
+1. Build preview HTML per component into a local bundle directory.
+2. `finalize_plan` locks the exact paths to be written — the user reviews that
+   list before anything uploads.
+3. `write_files` reads from disk and uploads; contents never pass through the
+   model's context.
+4. Cards appear in the Design System pane for annotation.
+5. Changes come back **one component at a time**, never as a wholesale replace.
+
+It points at a local directory. No repository, no archive, no upload step.
+
+!!! note "Better fit for the component library than the pages"
+    This is built around a component library, which maps cleanly onto the 14
+    files in `frontend/src/components/ui/`. The five app pages are compositions
+    with live state behind them, so they would sync only as static snapshots and
+    the annotate-then-change loop would be weaker for them.
+
+    The `/design-sync` skill also may need installing before any of this works.
+
+**Why after review, not before:** reviewers are likely to push on structure, and
+polishing a layout that then gets rebuilt wastes the effort twice.
+
+### Base UI migration — considered and declined
+**Effort: M · Recommendation: do not do this. Recorded so it is not re-litigated.**
+
+shadcn/ui made Base UI its default in July 2026. The project remains on Radix,
+and that is a deliberate choice rather than neglect:
+
+- shadcn's own changelog is explicit — *"Radix is not being deprecated… You do
+  not need to migrate… We still run it in production today and we're not
+  migrating."*
+- `radix-ui` is actively maintained, publishing 1.6.4 the same month.
+- Of the 14 components here, **six have no primitive dependency at all**. Only
+  `alert-dialog`, `button`, `badge`, `dropdown-menu`, `label`, `popover`,
+  `separator` and `tooltip` would change.
+- There is no codemod. The official path is an agent skill, migrating one
+  component and its usages at a time.
+
+The break is real where it applies: `asChild` becomes `render`, overlays
+decompose into `Portal → Positioner → Popup`, and animation data attributes
+differ. Non-zero risk for no user-visible gain.
+
+One point in this project's favour if it is ever revisited: the style preset is
+`radix-nova`, which has a direct `base-nova` counterpart, so migrating would not
+also drag the visual design onto a different preset. Projects on `new-york` have
+no such equivalent.
+
+Worth doing on a *new* project, where `bunx shadcn init` now selects Base UI
+anyway.
+
 ## Priority 3 — beyond the single-user demo
 
 ### A real backend with authentication
