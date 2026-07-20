@@ -125,6 +125,35 @@ def create_app(data_file: Path | None = None, token: str | None = None) -> FastA
     app.state.token = token
 
     @app.middleware("http")
+    async def cache_policy(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        """Set an explicit caching policy for everything we serve.
+
+        Starlette's StaticFiles sends only ETag and Last-Modified. With no
+        Cache-Control, RFC 9111 lets a browser apply *heuristic* freshness -
+        commonly a tenth of the document's age - and serve the shell from its
+        HTTP cache without revalidating. For a shell that names content-hashed
+        assets, a stale copy points at filenames a rebuild deleted, and the page
+        renders blank.
+
+        That failure is indistinguishable from the service-worker one and
+        survives everything a user might try, because unregistering a worker and
+        clearing Cache Storage do not touch the HTTP cache.
+
+        So the policy is stated rather than inferred:
+
+        - hashed assets are immutable, since their name changes with content
+        - everything else must revalidate
+        """
+        response = await call_next(request)
+
+        if request.url.path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif not request.url.path.startswith("/api/"):
+            response.headers.setdefault("Cache-Control", "no-cache")
+
+        return response
+
+    @app.middleware("http")
     async def require_token(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         """Gate the API. The app shell and service worker stay public.
 

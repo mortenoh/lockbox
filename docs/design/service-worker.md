@@ -359,3 +359,29 @@ inline script marks `sessionStorage` before reloading.
     That asymmetry is worth designing for before shipping, not after: the first
     release must already contain the recovery path, because it is the only one
     that can never be repaired remotely.
+
+## The HTTP cache is a second cache
+
+Clearing a service worker and its Cache Storage does **not** clear the browser's
+own HTTP cache. They are separate, and a stale shell in the HTTP cache produces
+exactly the same blank page — which makes it easy to misdiagnose as a
+service-worker problem that "would not go away".
+
+Starlette's `StaticFiles` sends `ETag` and `Last-Modified` but no
+`Cache-Control`. RFC 9111 then permits **heuristic freshness**: a browser may
+guess a lifetime, commonly a tenth of the document's age, and serve the shell
+without revalidating. For a shell naming content-hashed assets, a guess that old
+points at filenames a rebuild has deleted.
+
+So the policy is stated rather than inferred:
+
+| Path | `Cache-Control` | Why |
+| --- | --- | --- |
+| `/`, `/sw.js` | `no-cache` | Must revalidate. A stale shell or worker is the failure. |
+| `/assets/*` | `public, max-age=31536000, immutable` | Safe precisely because the filename changes with the content. |
+| `/api/*` | none | The sync engine sets `no-store` per request. |
+
+`no-cache` does not mean "do not store" — it means "revalidate before use", so
+the ETag still saves the transfer on an unchanged file. The cost is one
+conditional request, and the alternative is a class of failure users cannot
+clear.

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from lockbox.api import create_app
+from lockbox.api import STATIC_DIR, create_app
 from lockbox.schemas import EncryptedNote
 from lockbox.store import RecordStore
 
@@ -265,3 +265,36 @@ class TestTombstones:
         record = store.get("n1")
         assert record is not None
         assert record.deleted is True
+
+
+class TestCachePolicy:
+    """Caching must be stated, not left to the browser's heuristics."""
+
+    def test_shell_must_revalidate(self, client: TestClient) -> None:
+        """Without this a browser may serve a stale shell without asking.
+
+        RFC 9111 permits heuristic freshness when no Cache-Control is present,
+        and a stale shell names assets a rebuild has deleted - a blank page that
+        clearing the service worker does not fix, because the HTTP cache is a
+        different cache.
+        """
+        response = client.get("/")
+        assert response.headers["cache-control"] == "no-cache"
+
+    def test_service_worker_must_revalidate(self, client: TestClient) -> None:
+        assert client.get("/sw.js").headers["cache-control"] == "no-cache"
+
+    def test_hashed_assets_are_immutable(self, client: TestClient) -> None:
+        """Safe precisely because the filename changes whenever content does."""
+        assets = [p for p in STATIC_DIR.rglob("*") if p.suffix == ".js" and p.is_file()]
+        if not assets:
+            pytest.skip("frontend not built")
+
+        rel = assets[0].relative_to(STATIC_DIR).as_posix()
+        response = client.get(f"/{rel}")
+        assert "immutable" in response.headers["cache-control"]
+        assert "max-age=31536000" in response.headers["cache-control"]
+
+    def test_api_responses_are_not_given_a_cache_policy(self, client: TestClient) -> None:
+        """The sync engine sets its own no-store per request."""
+        assert "cache-control" not in client.get("/api/info").headers
