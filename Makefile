@@ -1,5 +1,5 @@
 .PHONY: help install lint test test-e2e coverage serve serve-token build-frontend lint-frontend \
-        tailnet tailnet-off funnel funnel-off tailnet-url docs docs-serve docs-build clean
+        tailscale-serve tailscale-serve-off tailscale-funnel tailscale-funnel-off tailscale-url docs docs-serve docs-build clean
 
 # ==============================================================================
 # Venv
@@ -11,6 +11,10 @@ PYTHON := $(VENV_DIR)/bin/python
 
 # Port the app is served on. Tailscale proxies to it on 443.
 PORT ?= 8000
+
+# Auth mode for the server: 'none' or 'token'. Overridden per target below -
+# publishing to the internet defaults to requiring a token.
+AUTH ?= none
 
 # ==============================================================================
 # Targets
@@ -30,12 +34,16 @@ help:
 	@echo "  build-frontend  Build the React app into src/lockbox/static"
 	@echo "  lint-frontend   Lint the frontend with oxlint"
 	@echo ""
-	@echo "Remote access (needs Tailscale):"
-	@echo "  tailnet      Share over HTTPS with your tailnet only"
-	@echo "  tailnet-url  Print the MagicDNS URL"
-	@echo "  tailnet-off  Stop sharing"
-	@echo "  funnel       Publish to the PUBLIC internet (refuses without auth)"
-	@echo "  funnel-off   Stop publishing"
+	@echo "Remote access (needs Tailscale). Each runs the app AND the proxy:"
+	@echo "  tailscale-serve       Reachable by your tailnet only"
+	@echo "  tailscale-funnel      Reachable by the PUBLIC internet (token auth)"
+	@echo "  tailscale-url         Print the MagicDNS URL"
+	@echo "  tailscale-serve-off   Stop sharing"
+	@echo "  tailscale-funnel-off  Stop publishing"
+	@echo ""
+	@echo "  serve and funnel are alternatives, not layers - funnel does not"
+	@echo "  need serve first, and either one replaces the other."
+	@echo "  Set PORT=8321 or AUTH=none|token on any of the above."
 	@echo ""
 	@echo "  docs-serve   Serve documentation locally with live reload"
 	@echo "  docs-build   Build documentation site"
@@ -71,12 +79,11 @@ coverage:
 
 serve:
 	@echo ">>> Serving on http://127.0.0.1:$(PORT)"
-	@$(UV) run lockbox serve --port $(PORT) --reload
+	@$(UV) run lockbox serve --port $(PORT) --auth $(AUTH) --reload
 
-# Prints a freshly generated token. Required before exposing the app publicly.
-serve-token:
-	@echo ">>> Serving on http://127.0.0.1:$(PORT) with token auth"
-	@$(UV) run lockbox serve --port $(PORT) --auth token --reload
+# Prints a freshly generated token on startup.
+serve-token: AUTH = token
+serve-token: serve
 
 # ==============================================================================
 # Remote access
@@ -86,37 +93,58 @@ serve-token:
 # address silently disables offline mode and biometric unlock. Tailscale issues
 # a real Let's Encrypt certificate, which is why these targets exist at all.
 
-tailnet:
-	@echo ">>> Sharing with your tailnet over HTTPS"
-	@tailscale serve --bg $(PORT)
+# `tailscale serve` and `tailscale funnel` are two settings of ONE proxy, not
+# layers: funnel does not require serve first, and enabling either replaces the
+# other. (`tailscale funnel reset` clears a serve config too, which is the
+# clearest evidence they share one config store.) The targets are named after
+# the CLI verbs so the mapping is obvious.
+#
+# One command, one terminal. Tailscale's proxy is a background daemon setting
+# rather than a process, so it is configured first and the server then runs in
+# the foreground - Ctrl-C stops the thing you actually started. The proxy config
+# survives, harmlessly pointing at a closed port, until '*-off' clears it.
+tailscale-serve:
+	@tailscale serve --bg $(PORT) >/dev/null
+	@echo ">>> Shared with your tailnet:"
+	@echo "    $$($(MAKE) -s tailscale-url)"
 	@echo ""
-	@echo "Only devices signed into your tailnet can reach this."
-	@echo "Tailscale authenticates them, so --auth none is fine here."
+	@echo "    Only devices signed into your tailnet can reach this. Tailscale"
+	@echo "    authenticates them, so AUTH=none is fine here."
+	@echo "    Stop sharing afterwards with 'make tailscale-serve-off'."
+	@echo ""
+	@$(UV) run lockbox serve --port $(PORT) --auth $(AUTH) --reload
 
-tailnet-url:
+tailscale-url:
 	@tailscale status --json \
 	  | $(PYTHON) -c "import json,sys; print('https://' + json.load(sys.stdin)['Self']['DNSName'].rstrip('.'))"
 
-tailnet-off:
+tailscale-serve-off:
 	@echo ">>> Stopping tailnet sharing"
 	@tailscale serve --https=443 off
 
-# Publishes to the whole internet. Warns when the API is unauthenticated but
-# does not block: this is a demo, and how long it stays exposed is your call.
-funnel:
-	@if curl -sf -o /dev/null --max-time 5 http://127.0.0.1:$(PORT)/api/info 2>/dev/null; then \
-		echo ""; \
-		echo "  WARNING: /api/info answered without a token."; \
-		echo "  Anyone who finds this URL can read, write and delete every note."; \
-		echo "  Use 'make serve-token' if it will be up for more than a moment."; \
-		echo ""; \
-	fi
-	@tailscale funnel --bg $(PORT)
+# Public internet, so this defaults to requiring a token. Override with
+# AUTH=none if you really want an open endpoint - you will be warned, not
+# stopped.
+tailscale-funnel: AUTH = token
+tailscale-funnel:
+	@tailscale funnel --bg $(PORT) >/dev/null
+	@echo ">>> PUBLIC on the internet:"
+	@echo "    $$($(MAKE) -s tailscale-url)"
 	@echo ""
-	@echo "PUBLIC. Stop it with 'make funnel-off'."
+	@if [ "$(AUTH)" = "none" ]; then \
+		echo "    WARNING: running with AUTH=none. Anyone who finds this URL can"; \
+		echo "    read, write and delete every note."; \
+	else \
+		echo "    The API requires the token printed below."; \
+	fi
+	@echo "    Stop publishing afterwards with 'make tailscale-funnel-off'."
+	@echo ""
+	@$(UV) run lockbox serve --port $(PORT) --auth $(AUTH) --reload
 
-funnel-off:
+tailscale-funnel-off:
 	@echo ">>> Stopping Funnel"
+	@echo "    Note: this clears any 'tailscale serve' config too - they are"
+	@echo "    the same underlying proxy."
 	@tailscale funnel reset
 
 # The built frontend is committed, so this is only needed after changing

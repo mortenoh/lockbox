@@ -26,26 +26,31 @@ app.** It is strictly less exposure for the same result.
 
 ## Make targets
 
-The commands below are wrapped up, so the common paths are one word:
+Each of these runs **both** the app and the proxy, so it is one command in one
+terminal. Ctrl-C stops the server; the proxy config outlives it until you turn
+it off.
 
 ```bash
-make tailnet       # share over HTTPS with your tailnet only
-make tailnet-url   # print the MagicDNS URL
-make tailnet-off   # stop
+make tailscale-serve        # reachable by your tailnet only
+make tailscale-funnel       # reachable by the public internet
+make tailscale-url          # print the MagicDNS URL
 
-make serve-token   # run the server requiring a bearer token
-make funnel        # publish to the public internet
-make funnel-off    # stop
+make tailscale-serve-off
+make tailscale-funnel-off
 ```
 
-`make funnel` checks whether `/api/*` answers without credentials and warns if
-it does. It still proceeds — how long the demo stays exposed is your call — but
-the warning is there because the combination is easy to reach by accident.
+`PORT=8321` and `AUTH=none|token` work on any of them. `tailscale-funnel`
+defaults to `AUTH=token`, since it is public; `AUTH=none` is allowed and warns
+rather than refusing.
 
-Pass `PORT=8321` to any of them to use a different port.
+!!! note "serve and funnel are alternatives, not layers"
+    Funnel does **not** require `serve` to be running first, and enabling either
+    replaces the other. They are two settings of one proxy — which is why
+    `tailscale funnel reset` also clears a `serve` config, something that is
+    easy to trip over when trying to switch between them.
 
-The rest of this page explains what those targets do, and how to recover when
-something does not behave.
+The rest of this page explains what those targets do underneath, and how to
+recover when something does not behave.
 
 ## Step by step: `tailscale serve` (tailnet only)
 
