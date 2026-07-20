@@ -47,21 +47,21 @@ so `build-frontend` is only needed after changing something under `frontend/src`
 ├── frontend/             # React 19 + TS + Vite + Tailwind v4 + shadcn/ui
 │   └── src/
 │       ├── lib/          # crypto.ts, db.ts, sync.ts — the interesting parts
-│       ├── pages/        # NotesPage, KdfLabPage, SyncModesPage, StoragePage
+│       ├── pages/        # Notes, KDF Lab, Sync Modes, At Rest, Security
 │       ├── components/   # AppLayout (sidebar shell), note UI, shadcn primitives
-│       └── hooks/        # use-notes, use-sync, use-sidebar, use-mobile
-├── tests/                # pytest — 21 passing
+│       ├── hooks/        # use-notes, use-sync, use-auto-lock, …
+│       └── e2e/          # Playwright browser tests
+├── tests/                # pytest — backend (36)
 ├── docs/                 # this site
 ├── data/notes.json       # server-side encrypted store (gitignored)
 ├── data/notes.plain.json # server-side readable store (gitignored)
 └── Makefile
 ```
 
-## The four pages
+## The five pages
 
 The app is a sidebar shell with five pages, routed with `HashRouter` so each has its own
 URL and a reload returns to it.
-the dependency.
 
 | Page | Source | What to use it for while developing |
 | --- | --- | --- |
@@ -69,6 +69,7 @@ the dependency.
 | **KDF Lab** | `pages/KdfLabPage.tsx` | Time Argon2id against PBKDF2 on this device, with tunable memory and iteration counts. Run it on the weakest target hardware before choosing parameters |
 | **Sync Modes** | `pages/SyncModesPage.tsx` | Switch between plaintext and encrypted sync, and see both server stores printed raw, side by side |
 | **At Rest** | `pages/StoragePage.tsx` | Raw dump of the `vault`, `notes` and `outbox` object stores with no decryption — the fastest way to check the project's headline claim |
+| **Security** | `pages/SecurityPage.tsx` | Biometric enrolment, auto-lock, API token when the server requires one |
 
 The shell (`components/AppLayout.tsx`) adds a collapsible sidebar, a lock button, a
 light/dark theme toggle (`next-themes`), toast notifications (`sonner`) and a status
@@ -157,18 +158,19 @@ there by hand.
 ## Testing
 
 ```bash
-make test       # pytest -q
+make test       # pytest -q  (backend, 36)
+make test-e2e   # Playwright against a real browser (45+)
 make coverage   # branch coverage, terminal + coverage.xml
 ```
 
-!!! warning "The TypeScript layer has no automated tests"
-    The Python backend has **21 passing tests**. `crypto.ts`, `db.ts` and `sync.ts` — where
-    all the difficulty and all the security-relevant logic lives — have **none**.
-    Everything documented about them has been verified manually, not by a test suite.
+!!! info "Browser e2e covers the headline claims; unit tests for crypto/sync are still open"
+    Playwright runs against real Web Crypto, IndexedDB, and the service worker — create
+    vault, offline queue, both sync modes, multi-user isolation, recovery from a bricked
+    client, and more. That is where most of the project’s difficulty lives, and those paths
+    are no longer manual-only.
 
-    This is the project's biggest gap and the top item on the
-    [Roadmap](../context/roadmap.md). There is no `make` target for frontend tests because
-    there are no frontend tests.
+    What is still missing is a fast **unit** layer (Vitest) for pure crypto helpers and the
+    sync drain state machine. See the [Roadmap](../context/roadmap.md).
 
 ## Testing offline behaviour
 

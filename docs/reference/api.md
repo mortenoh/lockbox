@@ -12,24 +12,18 @@ sync mode, so the two strategies can be compared directly against the same clien
 Both families expose the same verbs with the same idempotency semantics; only the body
 shape differs.
 
-!!! danger "There is no authentication"
-    None. Not a token, not a session, not basic auth. Anyone who can reach the server can
-    read every stored record or delete all of them.
+!!! warning "Authentication is optional and shared, not per-user"
+    Two modes, selected at startup (`--auth none|token`, or `make serve` / `make serve-token`):
 
-    This is stated in the source itself:
+    | Mode | Behaviour |
+    | --- | --- |
+    | **`none`** (default) | No credentials. Correct only for `127.0.0.1`. |
+    | **`token`** | Every `/api/*` call needs `Authorization: Bearer <token>`. The app shell and `/sw.js` stay public. |
 
-    ```python
-    """FastAPI application: serves the PWA and a small sync API.
-
-    There is deliberately no authentication here. This is a local learning demo
-    about client-side encryption and offline sync, not a deployable service.
-    """
-    ```
-
-    Under `/api/notes` an anonymous reader learns metadata and nothing else. Under
-    `/api/plain-notes` they read the notes outright. Bind to `127.0.0.1` (the default) and
-    do not expose it. Adding real auth is on the [Roadmap](../context/roadmap.md) — and in
-    a genuine DHIS2 integration it is the platform's job, not yours.
+    Token mode stops a publicly reachable deployment being an open endpoint. It is **not**
+    per-user auth: one shared secret, no expiry, and the client-declared `author` field is
+    still forgeable by anyone who holds the token. A real DHIS2 integration delegates
+    identity to the platform session. See [Remote Access](remote-access.md).
 
 Interactive OpenAPI docs are available at `/docs` and `/redoc` while the server is running.
 

@@ -83,7 +83,7 @@ records remain recoverable by signing in again and pulling.
 
 **Envelope encryption.** A random 256-bit AES-GCM *data encryption key* (DEK) encrypts each
 note. The DEK is wrapped by a *key encryption key* derived from the PIN with **Argon2id**
-(64 MiB, 3 passes) via `hash-wasm`. Only the salt, wrap IV and wrapped DEK are persisted —
+(128 MiB, 3 passes) via `hash-wasm`. Only the salt, wrap IV and wrapped DEK are persisted —
 all inert without the secret. The DEK lives in memory as a non-extractable `CryptoKey`.
 
 A wrong PIN is detected for free: it yields a KEK that fails AES-GCM's authentication tag
@@ -183,8 +183,8 @@ These are the things worth a reviewer's attention first.
 
 ```bash
 make lint          # ruff + mypy + pyright
-make test          # backend tests (32)
-make test-e2e      # browser end-to-end tests (24, Playwright)
+make test          # backend tests (36)
+make test-e2e      # browser end-to-end tests (Playwright, 45)
 make lint-frontend # oxlint
 ```
 

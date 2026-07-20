@@ -27,37 +27,24 @@ worse than none.
 
 ## Priority 1 — the gaps that undermine current claims
 
-### Automated tests for the TypeScript layer
+### Fast unit tests for crypto and sync
 
-**Effort: M · The single biggest gap in the project, and now the only Priority 1 item that has not moved.**
+**Effort: M · E2e is done; the remaining gap is a fast unit layer.**
 
-The Python backend has **21 passing tests**. The crypto and sync layers — which is where all
-the difficulty and all the security-relevant logic lives — have **no automated tests at
-all**. Every claim on the [Encryption](../design/encryption.md) and
-[Offline Sync](../design/offline-sync.md) pages currently rests on manual verification.
+Playwright covers the headline claims against a real browser (vault lifecycle, offline
+queue, both sync modes, multi-user isolation, recovery). The Python backend has
+**36** tests. What is still missing is a **Vitest** suite that runs in seconds for the pure
+logic:
 
-The Argon2id and sync-mode work made this worse, not better: there is more logic to get
-wrong now, and none of it is covered.
-
-What is needed:
-
-- **Crypto unit tests** (Vitest, with `happy-dom`/`jsdom` plus a real Web Crypto): round-trip
+- **Crypto unit tests** (real Web Crypto in Node or a browser-like env): round-trip
   encrypt/decrypt; wrong passphrase rejected; passphrase change preserves note readability;
   **a PBKDF2 vault migrates to Argon2id and still opens**; **`vaultKdf()` defaults a
-  legacy record to PBKDF2**; tampered ciphertext throws rather than returning garbage; IVs
-  are unique across many encryptions; the session key is genuinely non-extractable.
-- **Sync unit tests** with a mocked `fetch`: FIFO ordering preserved; a transient failure
-  stops the drain; a permanent failure parks the entry and continues; backoff grows and is
-  clamped at 60s; re-entry guard holds when triggers fire concurrently;
-  **plaintext mode hits `/api/plain-notes` and encrypted mode hits `/api/notes`**;
-  **a locked vault blocks a plaintext drain and does not block an encrypted one**.
-- **Playwright e2e**, codifying what is currently manual: create vault → write offline with
-  the server killed → restart → verify drain; verify IndexedDB contains no plaintext in
-  *either* mode; verify `data/notes.plain.json` does contain plaintext and
-  `data/notes.json` does not.
-
-The last one is worth automating precisely because it is the project's headline claim, and
-the claim is now more nuanced than it was.
+  legacy record to PBKDF2**; tampered ciphertext throws; IVs are unique; session key is
+  non-extractable.
+- **Sync unit tests** with a mocked `fetch`: FIFO ordering; transient failure stops the
+  drain; permanent failure parks and continues; backoff grows and clamps at 60s; re-entry
+  guard; **mode routing to `/api/plain-notes` vs `/api/notes`**; **locked vault blocks
+  plaintext drain only**.
 
 ### Content-Security-Policy hardening
 
@@ -71,20 +58,6 @@ cryptographic change on this page.
 
 Note the WASM: a strict policy needs `'wasm-unsafe-eval'` in `script-src` for Argon2id to
 instantiate, which is a narrower grant than `'unsafe-eval'` and is the right one to use.
-
-### Auto-lock on inactivity
-
-**Effort: S**
-
-The DEK currently stays in memory until the tab is closed or Lock is pressed. A laptop left
-open in a clinic is unlocked indefinitely. Add a configurable idle timeout (default 5–15
-minutes) that calls `lockVault()`, driven by input/visibility events.
-
-This matters **more** now than it did. Plaintext sync requires an unlocked vault, so the
-practical incentive is to leave it unlocked while the queue drains, which widens exactly
-the window auto-lock is meant to close. The timeout needs to be generous enough that a sync
-started at the end of a shift can complete, and the blocked-by-lock state needs to be
-legible enough that a user understands why a re-lock stalled the queue.
 
 ### Recovery codes
 
@@ -116,15 +89,14 @@ support is still weak. See [Trade-offs: unlock UX](trade-offs.md#unlock-ux).
 Doubly worth it now: a fast biometric unlock takes most of the pain out of the
 unlocked-vault requirement that plaintext sync imposes.
 
-### Raise the KDF parameters after benchmarking on real hardware
+### Re-benchmark KDF parameters on the weakest target device
 
-**Effort: S**
+**Effort: S · Laptop tuning is done (64 → 128 MiB); field devices may need a different pick.**
 
-The mechanism is done; the tuning is not. Argon2id at 64 MiB / t=3 measures 132–146 ms on
-an Apple Silicon laptop, comfortably under the 250–500 ms target, so the cost should go up.
-Run the KDF Lab on the weakest supported device — a low-end Android tablet — and pick from
-those numbers. Because the parameters live in the vault record, existing vaults keep
-opening at their old cost and can be re-wrapped at the new one via `changePassphrase()`.
+Argon2id at 128 MiB / t=3 measures ~263 ms on an Apple Silicon laptop, inside the 250–500
+ms interactive target. Run the KDF Lab on the weakest supported device — a low-end Android
+tablet — before raising further. Parameters live in the vault record, so existing vaults
+keep their cost and can be re-wrapped via `changePassphrase()`.
 
 ### Background Sync API as progressive enhancement
 
@@ -245,15 +217,15 @@ anyway.
 
 ## Priority 3 — beyond the single-user demo
 
-### A real backend with authentication
+### Per-user backend authentication
 
 **Effort: L**
 
-There is deliberately none today, and this now matters more than it used to: the plaintext
-store holds readable health-shaped data, so "anyone who can reach the server reads
-everything" is no longer merely a metadata leak. Real users, sessions, per-user
-authorisation, rate limiting, and a database instead of a JSON file. It also changes the
-error-classification story (401/403 become retryable-after-refresh).
+A shared bearer token (`--auth token`) is enough to stop a public URL being open, and is
+implemented. What is still missing is **per-user** identity: sessions, org-unit scoping,
+rate limiting, and a database instead of a JSON file. The plaintext store holds readable
+health-shaped data, so a stolen shared token still reads everything. Real auth also
+changes the error-classification story (401/403 become retryable-after-refresh).
 
 For a genuine DHIS2 integration this item is mostly moot — DHIS2 already provides all of
 it, and the right move is to use it rather than reimplement it. See
@@ -355,18 +327,22 @@ persistence was denied — that combination is how a day's fieldwork disappears.
 | --- | --- | --- | --- |
 | Argon2id KDF (default, params in vault, migration path) | — | M | ✅ **done** |
 | Two sync modes, plaintext default, two backend APIs | — | M | ✅ **done** |
-| TS crypto/sync unit tests + e2e | 1 | M | ❌ **biggest gap** — backend has 21 tests, TS layer has none |
+| Playwright e2e (browser, 45+) | — | M | ✅ **done** |
+| Auto-lock on inactivity | — | S | ✅ **done** |
+| WebAuthn PRF unlock | — | M–L | ✅ **done** (real hardware only in CI terms) |
+| Multiple users per device | — | M | ✅ **done** |
+| Shared bearer token (`none` / `token`) | — | S | ✅ **done** (not per-user) |
+| KDF params raised 64 → 128 MiB | — | S | ✅ **done** on laptop; re-check on weak tablets |
+| Vitest unit tests for crypto + sync | 1 | M | ❌ remaining test gap |
 | CSP hardening | 1 | S | ❌ |
-| Auto-lock on inactivity | 1 | S | ❌ |
 | Recovery codes | 1 | M | ❌ |
-| WebAuthn PRF unlock | 2 | M–L | ❌ |
-| Raise KDF parameters after real-device benchmarking | 2 | S | ⚠️ measured too fast on the dev machine |
+| Re-benchmark KDF on weakest field device | 2 | S | ⚠️ laptop done |
 | Background Sync (encrypted mode only) | 2 | S–M | ❌ |
 | Conflict / failure UI | 2 | M | ⚠️ minimal |
-| Refined error classification (408/429) | 2 | S | ⚠️ 4xx/5xx split only |
+| Refined error classification (408/429/401) | 2 | S | ⚠️ 4xx/5xx split only |
 | Incremental pull | 2 | M | ❌ full-table pull |
 | Metadata as AES-GCM AAD | 2 | S | ❌ |
-| Backend with authentication | 3 | L | ❌ deliberately none |
+| Per-user backend authentication | 3 | L | ❌ shared token only |
 | Blind indexing / encrypted search | 3 | L | ❌ |
 | Multi-device key sharing | 3 | L | ❌ |
 | Per-record DEKs | 3 | L | ❌ |

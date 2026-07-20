@@ -23,7 +23,7 @@ the typed passphrase, the DEK is unwrapped, and it is held in memory as a non-ex
 
 ```mermaid
 flowchart LR
-    P["Passphrase<br/>(typed, never stored)"] -->|"Argon2id<br/>64 MiB, t=3, p=1 + 16-byte salt"| KEK["KEK<br/>AES-GCM 256<br/>non-extractable"]
+    P["Passphrase<br/>(typed, never stored)"] -->|"Argon2id<br/>128 MiB, t=3, p=1 + 16-byte salt"| KEK["KEK<br/>AES-GCM 256<br/>non-extractable"]
     DEK0["DEK<br/>random AES-GCM 256"] -->|"wrapKey"| W["wrappedDek<br/>(base64url)"]
     KEK -->|wraps| W
     W -->|"stored"| IDB[("IndexedDB<br/>vault store")]
@@ -98,7 +98,7 @@ pre-existing vaults and to serve as the comparison arm in the KDF Lab.
 ```typescript
 export const ARGON2ID_PARAMS = {
     /** KiB of memory per guess. The parameter that actually hurts attackers. */
-    memorySize: 65_536, // 64 MiB
+    memorySize: 131_072, // 128 MiB
     /** Passes over memory. Raises cost linearly for attacker and defender alike. */
     iterations: 3,
     /** Lanes. Kept at 1 - browsers give us no reliable parallelism here. */
@@ -142,7 +142,7 @@ narrowest capability that does the job.
 | Parameter | Value | Rationale |
 | --- | --- | --- |
 | KDF (default) | **Argon2id** via `hash-wasm` | Memory-hard. Winner of the Password Hashing Competition. Costs ~40 KB of WASM, bundled with the app JS and precached, so unlock still works fully offline |
-| Argon2id memory | 65,536 KiB (64 MiB) | The parameter that actually hurts an attacker. Every guess must allocate 64 MiB, which caps how many fit on a GPU |
+| Argon2id memory | 131,072 KiB (128 MiB) | The parameter that actually hurts an attacker. Every guess must allocate 128 MiB, which caps how many fit on a GPU |
 | Argon2id iterations | 3 | Passes over memory. Scales cost linearly for attacker and defender alike |
 | Argon2id parallelism | 1 | Browsers give no reliable parallelism here, so lanes buy nothing |
 | KDF (legacy) | PBKDF2-HMAC-SHA256, 600,000 iterations | Native to every browser. Opens vaults created before Argon2id; not used for new ones |
@@ -156,7 +156,7 @@ narrowest capability that does the job.
 
 PBKDF2 is CPU-hard but not memory-hard. A GPU can run tens of thousands of SHA-256 chains
 in parallel at almost no memory cost per lane, so an attacker's advantage over one browser
-thread is enormous. Argon2id forces every guess to allocate 64 MiB, which caps how many
+thread is enormous. Argon2id forces every guess to allocate 128 MiB, which caps how many
 guesses fit on a card and shrinks that advantage by orders of magnitude.
 
 This only matters for **weak passphrases**. Against a diceware-style passphrase, PBKDF2 at
@@ -181,23 +181,26 @@ export async function benchmarkKdf(
 }
 ```
 
-!!! warning "Measured results — and what they say about these parameters"
-    On the development machine (Apple Silicon laptop, Chromium):
+!!! info "Measured results that chose these parameters"
+    On the development machine (Apple Silicon laptop, Chromium), six candidates were timed:
 
     | KDF | Parameters | Time |
     | --- | --- | --- |
-    | Argon2id | 64 MiB, t=3, p=1 | **132–146 ms** |
-    | PBKDF2-HMAC-SHA256 | 600,000 iterations | **54–67 ms** |
+    | Argon2id | 64 MiB, t=3, p=1 | 121 ms (previous default, too cheap) |
+    | Argon2id | 96 MiB, t=3, p=1 | 197 ms |
+    | Argon2id | **128 MiB, t=3, p=1** | **~263 ms** ← current default |
+    | Argon2id | 128 MiB, t=4, p=1 | 355 ms |
+    | Argon2id | 192 MiB, t=3, p=1 | 402 ms |
+    | PBKDF2-HMAC-SHA256 | 600,000 iterations | ~54–67 ms |
 
-    The usual target for an interactive unlock is **250–500 ms**. Both configurations come
-    in *below* that, which means on this hardware **the parameters should be raised**, not
-    left where they are. That is an honest finding, and the reason the numbers are printed
-    here rather than quietly rounded up.
+    The usual target for an interactive unlock is **250–500 ms**. 128 MiB lands inside that
+    window on a laptop while doubling the memory an attacker must commit per guess.
 
-    The caveat that matters more: a low-end Android tablet — the device this project is
-    actually about — will be several times slower, and it is the device that should set the
-    parameters. Do not tune on a developer laptop. Run the KDF Lab on the weakest hardware
-    you must support and pick from that.
+    A low-end Android tablet — the device this project is actually about — will be several
+    times slower, and it is the device that should set the parameters further. Do not raise
+    them on a developer laptop alone. Run the KDF Lab on the weakest hardware you must
+    support. Existing vaults keep their recorded parameters, so a change only affects new
+    ones (or re-wraps via `changePassphrase`).
 
 ### IV uniqueness
 
@@ -362,7 +365,7 @@ This is a genuinely nice property, and it is easy to accidentally throw away. A 
 implementation stores `sha256(passphrase)` to check the input before attempting decryption
 — which hands an offline attacker a much cheaper oracle than the KDF-and-unwrap path, and
 provides no security benefit whatsoever. Here, verifying a guess costs a full Argon2id
-derivation at 64 MiB. That cost *is* the defence.
+derivation at 128 MiB. That cost *is* the defence.
 
 ## What is encrypted, and what is not
 

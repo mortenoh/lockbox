@@ -18,7 +18,7 @@ const DATA_FILE = '.e2e-data/notes.json'
 
 export default defineConfig({
     testDir: './e2e',
-    // Vault creation runs Argon2id at 64 MiB, so unlocks are deliberately slow.
+    // Vault creation runs Argon2id at 128 MiB, so unlocks are deliberately slow.
     timeout: 60_000,
     expect: { timeout: 10_000 },
     fullyParallel: false, // one shared server, so keep server state predictable

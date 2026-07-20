@@ -49,7 +49,7 @@ argument.
     **Result:** they get ciphertext. The `notes` object store contains AES-256-GCM
     blobs. The `vault` store contains a salt, an IV, a KDF descriptor, and a DEK wrapped
     under a key that exists nowhere on the device. Recovering plaintext requires guessing
-    the passphrase, at a cost of one full Argon2id derivation per guess — 64 MiB of memory
+    the passphrase, at a cost of one full Argon2id derivation per guess — 128 MiB of memory
     and three passes over it, which is what makes GPU parallelism expensive rather than
     nearly free.
 
@@ -196,24 +196,23 @@ arguably the worse outcome. The **At Rest** page shows whether persistence was g
     wrapping the same DEK under a second high-entropy KEK is the standard one, and is on
     the [Roadmap](../context/roadmap.md).
 
-### No authentication on the demo server
+### Authentication is optional, shared, and not per-user
 
-There is none at all. Anyone who can reach the server can `GET /api/notes` or
-`GET /api/plain-notes` and download everything, or `DELETE` it. This is stated plainly in
-the source:
+The demo server has two modes, selected at startup:
 
-```python
-"""FastAPI application: serves the PWA and a small sync API.
+| Mode | When | What it does |
+| --- | --- | --- |
+| `none` (default) | Local development on `127.0.0.1` | No credentials. Anyone who can reach the process can read and write. |
+| `token` | Anything reachable beyond localhost (`make serve-token`, Tailscale Funnel) | A single shared bearer token on every `/api/*` call. |
 
-There is deliberately no authentication here. This is a local learning demo
-about client-side encryption and offline sync, not a deployable service.
-"""
-```
+Token mode is enough to stop a public URL being an open read/write endpoint. It is **not**
+per-user authentication: everyone who holds the token has the same access, the `author`
+field is still self-declared, and there is no expiry or rotation. A real DHIS2 integration
+would delegate identity to the platform session instead.
 
-Under `/api/notes` an anonymous reader learns metadata and nothing else. Under
-`/api/plain-notes` they read the notes. Either way an anonymous *writer* can delete or
-corrupt the entire store. Bind to `127.0.0.1`, which is the default, and do not expose
-this to a network.
+The app shell stays public either way — gating static JS would break service-worker install
+and offline boot. See [API Reference](../reference/api.md) and
+[Remote Access](../reference/remote-access.md).
 
 ### Metadata is not protected
 
@@ -259,7 +258,7 @@ flowchart LR
         N1["XSS or malicious dependency<br/>while unlocked"]
         N2["Malicious server serving<br/>modified JavaScript"]
         N3["Keylogger, screen capture,<br/>memory forensics"]
-        N4["Anyone reaching the demo server<br/>(no auth at all)"]
+        N4["Demo server without a token<br/>(or with a shared stolen token)"]
         N5["Metadata: ids, timestamps, counts"]
     end
 ```

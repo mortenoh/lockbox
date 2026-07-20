@@ -55,7 +55,7 @@ multiple authorised users. The full working-through is in
 
 ## Key derivation function
 
-The KEK is derived with **Argon2id** (64 MiB, `t = 3`, `p = 1`) via
+The KEK is derived with **Argon2id** (128 MiB, `t = 3`, `p = 1`) via
 [`hash-wasm`](https://github.com/Daninet/hash-wasm). **This is now implemented**, not a
 recommendation. PBKDF2-HMAC-SHA256 at 600,000 iterations is retained solely to open vaults
 created before the switch, and as the comparison arm in the app's KDF Lab page.
@@ -70,7 +70,7 @@ created before the switch, and as the comparison arm in the app's KDF Lab page.
 **The problem with PBKDF2:** it is CPU-hard but not memory-hard. A GPU can run enormous
 numbers of SHA-256 chains in parallel at trivial per-lane memory cost, so an attacker's
 advantage over the defender's single browser thread is very large. Argon2id forces each
-guess to allocate 64 MiB, which caps how many guesses fit on a card and shrinks that
+guess to allocate 128 MiB, which caps how many guesses fit on a card and shrinks that
 advantage by orders of magnitude.
 
 This only matters for **low-entropy passphrases**. Against a diceware-style passphrase,
@@ -80,21 +80,21 @@ where PBKDF2 buys hours. Users pick `summer2026`.
 ### Measured, not assumed
 
 `benchmarkKdf()` times a real derivation, and the **KDF Lab** page drives it with tunable
-parameters. On the development machine (Apple Silicon laptop, Chromium):
+parameters. Defaults were chosen from measured candidates on an Apple Silicon laptop:
 
 | KDF | Parameters | Time |
 | --- | --- | --- |
-| Argon2id | 64 MiB, `t = 3`, `p = 1` | **132–146 ms** |
-| PBKDF2-HMAC-SHA256 | 600,000 iterations | **54–67 ms** |
+| Argon2id | 64 MiB, `t = 3`, `p = 1` | ~121 ms (previous default) |
+| Argon2id | **128 MiB, `t = 3`, `p = 1`** | **~263 ms** ← current default |
+| PBKDF2-HMAC-SHA256 | 600,000 iterations | **~54–67 ms** |
 
-Both sit *below* the usual 250–500 ms interactive-unlock target, which means on this
-hardware the parameters are too low and should be raised. Stating that is more useful than
-quietly presenting the defaults as tuned.
+128 MiB sits inside the usual 250–500 ms interactive-unlock target on a laptop while
+doubling attacker memory cost per guess.
 
-!!! warning "Do not tune on a developer laptop"
+!!! warning "Do not raise further on a developer laptop alone"
     A low-end Android tablet — the device this project is actually about — will be several
-    times slower, and it is the device that must set the parameters. Run the KDF Lab on the
-    weakest hardware you have to support and pick from those numbers, not these.
+    times slower, and it is the device that must set any further increase. Run the KDF Lab
+    on the weakest hardware you have to support and pick from those numbers.
 
 The vault record stores `{kdf, params}`, so old vaults keep working and costs can be raised
 later. Migration is cheap because of the envelope: unwrap with the old KEK, re-wrap with
@@ -103,7 +103,8 @@ reason — see [Encryption](../design/encryption.md#passphrase-change-and-kdf-mi
 
 ## Unlock UX
 
-The user types a passphrase every session. Nothing else unlocks the vault.
+The user types a PIN/passphrase every session by default. **WebAuthn PRF biometric unlock
+is implemented** as a second envelope over the same DEK (Security page).
 
 | Option | Security | UX | Support (2026) |
 | --- | --- | --- | --- |
@@ -161,9 +162,12 @@ Lockbox uses **raw IndexedDB** — about 220 lines including a hand-rolled promi
 `withStore()` helpers exist purely because raw IndexedDB is event-based; `idb` deletes
 both and changes nothing else.
 
-**On Dexie:** the right answer once the schema grows past a handful of stores. Its
-versioning/migration story in particular is something you do not want to hand-roll — the
-`onupgradeneeded` pattern gets ugly fast at version 4 or 5.
+**On Dexie:** the right answer once the schema grows past a handful of stores, or once
+real users make data-preserving migrations mandatory. Pre-release, Lockbox never migrated
+data — a schema bump simply dropped and recreated the stores, which is only defensible
+while no user data exists. Once it does, the `onupgradeneeded` pattern gets ugly fast at
+version 4 or 5, and Dexie's versioning/migration story is exactly what you do not want to
+hand-roll.
 
 !!! success "Recommendation"
     - Learning or a tiny schema → raw IndexedDB, or `idb` to remove the ceremony.
@@ -310,8 +314,8 @@ Worth it for "find the patient by ID number". Not a general search solution. On 
 | Area | Current | Recommended for production |
 | --- | --- | --- |
 | Encryption scope | **Local device only**, plaintext sync by default | Unchanged — correct for a shared-data platform. Document the boundary explicitly |
-| KDF | **Argon2id** 64 MiB / t=3 / p=1, params in the vault record | Unchanged, but **raise the parameters** after benchmarking on the weakest target device |
-| Unlock | Passphrase only | Passphrase (or recovery code) as root + **WebAuthn PRF** as optional unlock |
+| KDF | **Argon2id** 128 MiB / t=3 / p=1, params in the vault record | Re-benchmark on the weakest target device before raising further |
+| Unlock | PIN/passphrase + optional **WebAuthn PRF** | Add recovery codes as a second root envelope |
 | Cipher | AES-256-GCM | Unchanged — correct |
 | Envelope | KEK wraps DEK | Unchanged — correct, and enables everything above |
 | Storage | Raw IndexedDB | **Dexie** past ~3 stores; `idb` as the minimal step |

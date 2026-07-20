@@ -22,8 +22,10 @@ import type { VaultRecord } from '@/lib/crypto'
 
 const DB_NAME = 'lockbox'
 /**
- * v2 introduced multiple vaults per device.
- * v3 made that isolation real: notes are keyed by [ownerId, id], not id alone.
+ * The schema reached 3 (v2 added multiple vaults per device; v3 keyed notes by
+ * [ownerId, id], not id alone). It is held at 3 even though pre-v3 databases are
+ * now reset rather than migrated: lowering it would throw VersionError on dev
+ * machines that already opened a v3 database.
  */
 const DB_VERSION = 3
 
@@ -73,14 +75,31 @@ const OPEN_TIMEOUT_MS = 5_000
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
+/** Create the three object stores in their current (v3) shape. */
+function createStores(db: IDBDatabase): void {
+    db.createObjectStore(STORE_VAULT, { keyPath: 'id' })
+
+    // Compound key, not 'id'. Two users pulling the same server record share
+    // its id, so keying on id alone let one user's ciphertext overwrite the
+    // other's.
+    const notes = db.createObjectStore(STORE_NOTES, { keyPath: ['ownerId', 'id'] })
+    notes.createIndex('ownerId', 'ownerId')
+
+    const outbox = db.createObjectStore(STORE_OUTBOX, {
+        keyPath: 'seq',
+        autoIncrement: true,
+    })
+    outbox.createIndex('ownerId', 'ownerId')
+}
+
 /**
- * Open (and if needed create/upgrade) the database.
+ * Open (and if needed create/reset) the database.
  *
- * The v1 -> v2 migration is worth reading: v1 stored a single vault under the
- * fixed key "default" with out-of-line keys. v2 keys vaults by an in-line `id`,
- * which means the store cannot simply be altered - it has to be read, dropped,
- * recreated with a keyPath, and repopulated. Existing notes are adopted by the
- * migrated vault so nobody loses data on upgrade.
+ * There is no migration path. A fresh install creates the current shape
+ * outright. Any schema bump drops existing stores and recreates that shape —
+ * pre-release only, while no real users keep local data. The version number
+ * stays at 3 so machines that already opened a v3 database do not hit
+ * VersionError; lowering it would.
  */
 function openDb(): Promise<IDBDatabase> {
     if (dbPromise) return dbPromise
@@ -114,93 +133,21 @@ function openDb(): Promise<IDBDatabase> {
 
         request.onupgradeneeded = (event) => {
             const db = request.result
-            const tx = request.transaction
             const oldVersion = event.oldVersion
 
-            if (oldVersion < 1) {
-                // Fresh install: create everything in its v2 shape.
-                db.createObjectStore(STORE_VAULT, { keyPath: 'id' })
-
-                // Compound key, not 'id'. Two users pulling the same server
-                // record share its id, so keying on id alone let one user's
-                // ciphertext overwrite the other's.
-                const notes = db.createObjectStore(STORE_NOTES, { keyPath: ['ownerId', 'id'] })
-                notes.createIndex('ownerId', 'ownerId')
-
-                const outbox = db.createObjectStore(STORE_OUTBOX, {
-                    keyPath: 'seq',
-                    autoIncrement: true,
-                })
-                outbox.createIndex('ownerId', 'ownerId')
-                return
-            }
-
-            if (oldVersion === 2 && tx) {
-                // Rebuild the notes store with a compound key. keyPath cannot be
-                // altered in place, so the records are read out, the store is
-                // dropped and recreated, then repopulated.
-                const legacyNotes: NoteRecord[] = []
-                const cursorRequest = tx.objectStore(STORE_NOTES).openCursor()
-                cursorRequest.onsuccess = (e) => {
-                    const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result
-                    if (cursor) {
-                        legacyNotes.push(cursor.value as NoteRecord)
-                        cursor.continue()
-                        return
-                    }
-
-                    db.deleteObjectStore(STORE_NOTES)
-                    const rebuilt = db.createObjectStore(STORE_NOTES, {
-                        keyPath: ['ownerId', 'id'],
-                    })
-                    rebuilt.createIndex('ownerId', 'ownerId')
-                    for (const note of legacyNotes) {
-                        if (note.ownerId) rebuilt.put(note)
-                    }
-                }
-                return
-            }
-
-            if (oldVersion < 2 && tx) {
-                const legacyId = crypto.randomUUID()
-
-                // Read the single v1 vault before dropping its store.
-                const legacyRequest = tx.objectStore(STORE_VAULT).get('default')
-                legacyRequest.onsuccess = () => {
-                    const legacy = legacyRequest.result as VaultRecord | undefined
-
-                    db.deleteObjectStore(STORE_VAULT)
-                    const vaults = db.createObjectStore(STORE_VAULT, { keyPath: 'id' })
-                    if (legacy) {
-                        vaults.put({
-                            ...legacy,
-                            id: legacyId,
-                            owner: legacy.owner ?? 'Existing user',
-                        })
-                    }
-                }
-
-                // Adopt existing notes and queue entries into the migrated vault.
-                const notes = tx.objectStore(STORE_NOTES)
-                if (!notes.indexNames.contains('ownerId')) notes.createIndex('ownerId', 'ownerId')
-                notes.openCursor().onsuccess = (e) => {
-                    const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result
-                    if (!cursor) return
-                    cursor.update({ ...cursor.value, ownerId: cursor.value.ownerId ?? legacyId })
-                    cursor.continue()
-                }
-
-                const outbox = tx.objectStore(STORE_OUTBOX)
-                if (!outbox.indexNames.contains('ownerId')) {
-                    outbox.createIndex('ownerId', 'ownerId')
-                }
-                outbox.openCursor().onsuccess = (e) => {
-                    const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result
-                    if (!cursor) return
-                    cursor.update({ ...cursor.value, ownerId: cursor.value.ownerId ?? legacyId })
-                    cursor.continue()
+            // Pre-release policy: any schema bump wipes local stores, then
+            // createStores builds the current shape. That is only defensible
+            // while no real users keep data here - the project shipped with
+            // none. A fresh install (oldVersion < 1) has nothing to drop.
+            // Before shipping to people who keep vaults, replace this with
+            // real step migrations (and stop calling createStores on every bump).
+            if (oldVersion >= 1) {
+                for (const name of Array.from(db.objectStoreNames)) {
+                    db.deleteObjectStore(name)
                 }
             }
+
+            createStores(db)
         }
 
         request.onsuccess = settle(() => {

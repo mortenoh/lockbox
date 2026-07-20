@@ -49,7 +49,6 @@ export function useAutoLock(active: boolean, minutes: number, onLock: () => void
             for (const event of ACTIVITY_EVENTS) window.removeEventListener(event, touch)
             window.clearInterval(interval)
             document.removeEventListener('visibilitychange', check)
-            window.clearTimeout(interval)
         }
         // `minutes` is a dependency so changing the setting restarts the timer
         // immediately, rather than only taking effect after the next unlock.
