@@ -55,8 +55,11 @@ multiple authorised users. The full working-through is in
 
 ## Key derivation function
 
-The KEK is derived with **Argon2id** (128 MiB, `t = 3`, `p = 1`) via
-[`hash-wasm`](https://github.com/Daninet/hash-wasm). **This is now implemented**, not a
+The KEK is derived with **Argon2id** via
+[`hash-wasm`](https://github.com/Daninet/hash-wasm), with parameters **calibrated on the
+device at vault creation**: a ladder from 128 MiB / `t = 3` down to OWASP's 19 MiB /
+`t = 2` floor, picked by a timed probe so one derivation stays inside a 1 s unlock budget
+(tunables in `frontend/src/lib/config.ts`). **This is now implemented**, not a
 recommendation. PBKDF2-HMAC-SHA256 at 600,000 iterations is retained solely to open vaults
 created before the switch, and as the comparison arm in the app's KDF Lab page.
 
@@ -70,8 +73,8 @@ created before the switch, and as the comparison arm in the app's KDF Lab page.
 **The problem with PBKDF2:** it is CPU-hard but not memory-hard. A GPU can run enormous
 numbers of SHA-256 chains in parallel at trivial per-lane memory cost, so an attacker's
 advantage over the defender's single browser thread is very large. Argon2id forces each
-guess to allocate 128 MiB, which caps how many guesses fit on a card and shrinks that
-advantage by orders of magnitude.
+guess to allocate real memory — up to 128 MiB, never below 19 MiB — which caps how many
+guesses fit on a card and shrinks that advantage by orders of magnitude.
 
 This only matters for **low-entropy passphrases**. Against a diceware-style passphrase,
 PBKDF2 at 600k is already unbreakable. Against `summer2026`, Argon2id might buy weeks
@@ -84,17 +87,20 @@ parameters. Defaults were chosen from measured candidates on an Apple Silicon la
 
 | KDF | Parameters | Time |
 | --- | --- | --- |
-| Argon2id | 64 MiB, `t = 3`, `p = 1` | ~121 ms (previous default) |
-| Argon2id | **128 MiB, `t = 3`, `p = 1`** | **~263 ms** ← current default |
+| Argon2id | 64 MiB, `t = 3`, `p = 1` | ~121 ms (a ladder tier) |
+| Argon2id | **128 MiB, `t = 3`, `p = 1`** | **~263 ms** ← the ceiling tier |
 | PBKDF2-HMAC-SHA256 | 600,000 iterations | **~54–67 ms** |
 
 128 MiB sits inside the usual 250–500 ms interactive-unlock target on a laptop while
 doubling attacker memory cost per guess.
 
-!!! warning "Do not raise further on a developer laptop alone"
-    A low-end Android tablet — the device this project is actually about — will be several
-    times slower, and it is the device that must set any further increase. Run the KDF Lab
-    on the weakest hardware you have to support and pick from those numbers.
+!!! warning "The laptop numbers only set the ceiling"
+    A low-end Android tablet — the device this project is actually about — is easily
+    10-25x slower, so no single parameter set fits both. Vault creation therefore runs
+    `calibrateKdfParams()`: a timed probe at the floor tier plus a `navigator.deviceMemory`
+    cap picks the strongest ladder tier the device can afford, and an allocation failure
+    steps down the ladder rather than failing. The KDF Lab remains the manual version of
+    the same measurement.
 
 The vault record stores `{kdf, params}`, so old vaults keep working and costs can be raised
 later. Migration is cheap because of the envelope: unwrap with the old KEK, re-wrap with
@@ -314,7 +320,7 @@ Worth it for "find the patient by ID number". Not a general search solution. On 
 | Area | Current | Recommended for production |
 | --- | --- | --- |
 | Encryption scope | **Local device only**, plaintext sync by default | Unchanged — correct for a shared-data platform. Document the boundary explicitly |
-| KDF | **Argon2id** 128 MiB / t=3 / p=1, params in the vault record | Re-benchmark on the weakest target device before raising further |
+| KDF | **Argon2id**, device-calibrated (128 MiB ceiling, 19 MiB floor), params in the vault record | Unchanged — calibration replaces manual per-device benchmarking |
 | Unlock | PIN/passphrase + optional **WebAuthn PRF** | Add recovery codes as a second root envelope |
 | Cipher | AES-256-GCM | Unchanged — correct |
 | Envelope | KEK wraps DEK | Unchanged — correct, and enables everything above |

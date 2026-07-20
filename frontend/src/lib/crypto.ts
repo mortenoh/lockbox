@@ -48,68 +48,19 @@
 
 import { argon2id } from 'hash-wasm'
 
+import {
+    ARGON2ID_LADDER,
+    ARGON2ID_MIN_PARAMS,
+    ARGON2ID_PARAMS,
+    DEFAULT_KDF,
+    DEVICE_MEMORY_CAPS,
+    PBKDF2_ITERATIONS,
+    TARGET_UNLOCK_MS,
+} from '@/lib/config'
 import { fromBase64, toBase64 } from '@/lib/encoding'
 import type { PrfEnvelope } from '@/lib/webauthn'
 
 export { fromBase64, toBase64 }
-
-// ============================================================================
-// Key derivation parameters
-// ============================================================================
-
-/**
- * Argon2id parameters. The default KDF for new vaults.
- *
- * Argon2id is *memory-hard*: every guess must allocate `memorySize` of RAM.
- * That is the whole point. PBKDF2 is merely CPU-hard, and a GPU can run tens of
- * thousands of SHA-256 chains in parallel at almost no memory cost per lane, so
- * an attacker's advantage over one browser thread is enormous. Forcing 128 MiB
- * per guess caps how many guesses fit on a card and shrinks that advantage by
- * orders of magnitude.
- *
- * This only matters for weak passphrases - and users choose weak passphrases.
- *
- * Values follow OWASP's 2026 baseline, raised substantially on memory. Chosen
- * from measurements rather than taste - the KDF Lab timed these on an Apple
- * Silicon laptop:
- *
- *      64 MiB / 3 passes -> 121 ms   (previous default, too cheap)
- *      96 MiB / 3 passes -> 197 ms
- *     128 MiB / 3 passes -> 263 ms   <- current
- *     128 MiB / 4 passes -> 355 ms
- *     192 MiB / 3 passes -> 402 ms
- *     256 MiB / 3 passes -> 554 ms
- *
- * The target is roughly 250-500 ms for one derivation. 128 MiB doubles the
- * memory an attacker must commit per guess while staying comfortably
- * allocatable on a phone, and leaves headroom for slower hardware: a low-end
- * Android tablet can be 3-4x slower, which would push the 128/4 option past a
- * second and make unlocking feel broken.
- *
- * Benchmark on the weakest device you must support before raising this further.
- * Existing vaults keep their own recorded parameters, so a change here only
- * affects new ones - see `vaultKdf`.
- */
-export const ARGON2ID_PARAMS = {
-    /**
-     * KiB of memory per guess. The parameter that actually hurts attackers,
-     * because it caps how many guesses fit on a GPU rather than merely slowing
-     * each one down.
-     */
-    memorySize: 131_072, // 128 MiB
-    /** Passes over memory. Raises cost linearly for attacker and defender alike. */
-    iterations: 3,
-    /** Lanes. Kept at 1 - browsers give us no reliable parallelism here. */
-    parallelism: 1,
-} as const
-
-/**
- * PBKDF2 iteration count (OWASP 2026 guidance for HMAC-SHA256).
- *
- * Retained for two reasons: opening vaults created before Argon2id, and serving
- * as the comparison arm in the KDF Lab. Not recommended for new vaults.
- */
-export const PBKDF2_ITERATIONS = 600_000
 
 const SALT_BYTES = 16
 /** 96 bits - the IV size AES-GCM is actually specified for. Do not change. */
@@ -118,9 +69,6 @@ const DEK_BITS = 256
 
 /** Which key-derivation function a vault uses. */
 export type KdfId = 'argon2id' | 'pbkdf2'
-
-/** The KDF used for vaults created from now on. */
-export const DEFAULT_KDF: KdfId = 'argon2id'
 
 /** Tunables recorded alongside the vault so old vaults stay openable. */
 export interface KdfParams {
@@ -276,7 +224,11 @@ async function derivePbkdf2Bits(
     return new Uint8Array(bits)
 }
 
-/** Default parameters for a KDF, used when creating a vault. */
+/**
+ * Ceiling parameters for a KDF. Vault creation does not use these directly -
+ * it calibrates via {@link calibrateKdfParams} - but the KDF Lab and the
+ * PBKDF2 path do.
+ */
 export function defaultParams(kdf: KdfId): KdfParams {
     return kdf === 'argon2id' ? { ...ARGON2ID_PARAMS } : { iterations: PBKDF2_ITERATIONS }
 }
@@ -300,6 +252,106 @@ export async function benchmarkKdf(
 }
 
 // ============================================================================
+// On-device calibration
+// ============================================================================
+
+/**
+ * Work proxy for an Argon2id parameter set: memory times passes.
+ *
+ * Argon2id's running time scales close to linearly in both, so the ratio of
+ * two costs predicts the ratio of their running times on the same device.
+ */
+function argon2idCost(params: KdfParams): number {
+    return (params.memorySize ?? ARGON2ID_PARAMS.memorySize) * params.iterations
+}
+
+/**
+ * Choose Argon2id parameters from one measured probe. Pure - the measuring
+ * lives in {@link calibrateKdfParams} so this stays unit-testable.
+ *
+ * @param probeMs how long the device took to derive at `ARGON2ID_MIN_PARAMS`
+ * @param deviceMemoryGb `navigator.deviceMemory` where available
+ * @returns the strongest ladder tier predicted to finish within
+ *          `TARGET_UNLOCK_MS` and fit the device's RAM; never weaker than
+ *          `ARGON2ID_MIN_PARAMS`, even when that alone busts the budget.
+ */
+export function pickArgon2idParams(probeMs: number, deviceMemoryGb?: number): KdfParams {
+    const cap =
+        deviceMemoryGb === undefined
+            ? undefined
+            : DEVICE_MEMORY_CAPS.find((c) => deviceMemoryGb < c.belowGb)
+    const maxMemorySize = cap?.maxMemorySizeKib ?? Number.POSITIVE_INFINITY
+    const floorCost = argon2idCost(ARGON2ID_MIN_PARAMS)
+
+    for (const tier of ARGON2ID_LADDER) {
+        if (tier.memorySize > maxMemorySize) continue
+        const predictedMs = (argon2idCost(tier) / floorCost) * probeMs
+        if (predictedMs <= TARGET_UNLOCK_MS) return { ...tier }
+    }
+
+    return { ...ARGON2ID_MIN_PARAMS }
+}
+
+/**
+ * Measure this device and pick KDF parameters for a new vault.
+ *
+ * The deployment target includes decade-old laptops and 1-2 GB Android
+ * phones, easily 10-25x slower than a developer machine - parameters that
+ * feel instant on the latter freeze the former for seconds, so the device is
+ * measured rather than assumed. The chosen parameters are persisted in the
+ * vault record; unlocking never calibrates again.
+ *
+ * The probe derives twice at the floor tier and keeps the faster run: the
+ * first call also pays the Argon2id WASM compile, and counting that against
+ * the device would underrate it.
+ */
+export async function calibrateKdfParams(kdf: KdfId = DEFAULT_KDF): Promise<KdfParams> {
+    if (kdf !== 'argon2id') return defaultParams(kdf)
+
+    const probe = 'calibration probe'
+    const first = await benchmarkKdf(probe, 'argon2id', ARGON2ID_MIN_PARAMS)
+    const second = await benchmarkKdf(probe, 'argon2id', ARGON2ID_MIN_PARAMS)
+    const deviceMemoryGb =
+        typeof navigator === 'undefined'
+            ? undefined
+            : (navigator as Navigator & { deviceMemory?: number }).deviceMemory
+
+    return pickArgon2idParams(Math.min(first, second), deviceMemoryGb)
+}
+
+/**
+ * Derive a KEK, stepping down the Argon2id ladder if the device cannot
+ * actually allocate what calibration (or a stored preference) asked for.
+ *
+ * Only meaningful while *creating* key material: the parameters that finally
+ * succeeded are returned and must be the ones persisted. Never use this to
+ * open an existing vault - its parameters are fixed, and a "fallback" there
+ * would just derive a wrong key.
+ */
+async function deriveKekForNewVault(
+    passphrase: string,
+    salt: Uint8Array,
+    kdf: KdfId,
+    params: KdfParams,
+): Promise<{ kek: CryptoKey; params: KdfParams }> {
+    if (kdf !== 'argon2id') return { kek: await deriveKek(passphrase, salt, kdf, params), params }
+
+    let candidate = params
+    for (;;) {
+        try {
+            return { kek: await deriveKek(passphrase, salt, kdf, candidate), params: candidate }
+        } catch (error) {
+            // Ladder is strongest-first, so find() yields the strongest tier
+            // still cheaper than what just failed.
+            const cost = argon2idCost(candidate)
+            const weaker = ARGON2ID_LADDER.find((tier) => argon2idCost(tier) < cost)
+            if (!weaker) throw error
+            candidate = { ...weaker }
+        }
+    }
+}
+
+// ============================================================================
 // Vault lifecycle
 // ============================================================================
 
@@ -309,16 +361,24 @@ export async function benchmarkKdf(
  * Generates a random DEK, wraps it under a passphrase-derived KEK, and returns
  * the material to persist. Also leaves the vault unlocked, so the caller does
  * not have to immediately ask for the passphrase again.
+ *
+ * KDF parameters are calibrated to this device unless the caller passes their
+ * own (tests do; the app never should).
  */
 export async function createVault(
     passphrase: string,
     owner: string,
     kdf: KdfId = DEFAULT_KDF,
+    requestedParams?: KdfParams,
 ): Promise<VaultRecord> {
     const salt = randomBytes(SALT_BYTES)
     const wrapIv = randomBytes(IV_BYTES)
-    const params = defaultParams(kdf)
-    const kek = await deriveKek(passphrase, salt, kdf, params)
+    const { kek, params } = await deriveKekForNewVault(
+        passphrase,
+        salt,
+        kdf,
+        requestedParams ?? (await calibrateKdfParams(kdf)),
+    )
 
     // Generated extractable *only* so it can be wrapped below. The handle kept
     // for the session is the non-extractable one produced by unwrapKey.
@@ -468,6 +528,7 @@ export async function changePassphrase(
     newPassphrase: string,
     vault: VaultRecord,
     kdf: KdfId = DEFAULT_KDF,
+    requestedParams?: KdfParams,
 ): Promise<VaultRecord | null> {
     const current = vaultKdf(vault)
     const oldKek = await deriveKek(
@@ -496,8 +557,12 @@ export async function changePassphrase(
     // information about the relationship between the old and new keys.
     const salt = randomBytes(SALT_BYTES)
     const wrapIv = randomBytes(IV_BYTES)
-    const params = defaultParams(kdf)
-    const newKek = await deriveKek(newPassphrase, salt, kdf, params)
+    const { kek: newKek, params } = await deriveKekForNewVault(
+        newPassphrase,
+        salt,
+        kdf,
+        requestedParams ?? (await calibrateKdfParams(kdf)),
+    )
     const wrappedDek = await crypto.subtle.wrapKey('raw', dek, newKek, {
         name: 'AES-GCM',
         iv: bytesOf(wrapIv),

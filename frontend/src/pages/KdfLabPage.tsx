@@ -7,12 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-    ARGON2ID_PARAMS,
-    PBKDF2_ITERATIONS,
-    benchmarkKdf,
-    type KdfId,
-} from '@/lib/crypto'
+import { ARGON2ID_PARAMS, PBKDF2_ITERATIONS } from '@/lib/config'
+import { benchmarkKdf, type KdfId } from '@/lib/crypto'
 
 /**
  * KDF Lab: derive a key with each algorithm and time it on this device.

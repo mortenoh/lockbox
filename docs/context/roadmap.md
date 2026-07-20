@@ -15,7 +15,7 @@ worse than none.
 | --- | --- |
 | **Automated tests for the TypeScript layer** | 45 Playwright tests against a real browser rather than jsdom with a fake IndexedDB. Several are named regressions for bugs that shipped. |
 | **Argon2id as the default KDF** | Replaced PBKDF2, which is retained for legacy vaults and as the comparison arm in the KDF Lab. |
-| **KDF parameters raised** | 64 → 128 MiB, chosen from six measured candidates rather than taste. |
+| **KDF parameters raised, then calibrated** | 64 → 128 MiB as the ceiling, chosen from six measured candidates; vault creation now calibrates down a ladder (to OWASP's 19 MiB floor) on slow or low-RAM devices. |
 | **WebAuthn PRF unlock** | The same DEK wrapped a second time under authenticator-derived key material. Verified on real hardware only — see below. |
 | **Auto-lock on inactivity** | Timestamp-based, so a sleeping device notices on wake. |
 | **Multiple users per device** | Vaults keyed per user, notes keyed `[ownerId, id]`. |
@@ -91,12 +91,14 @@ unlocked-vault requirement that plaintext sync imposes.
 
 ### Re-benchmark KDF parameters on the weakest target device
 
-**Effort: S · Laptop tuning is done (64 → 128 MiB); field devices may need a different pick.**
+**Done — superseded by on-device calibration.**
 
-Argon2id at 128 MiB / t=3 measures ~263 ms on an Apple Silicon laptop, inside the 250–500
-ms interactive target. Run the KDF Lab on the weakest supported device — a low-end Android
-tablet — before raising further. Parameters live in the vault record, so existing vaults
-keep their cost and can be re-wrapped via `changePassphrase()`.
+Vault creation now runs `calibrateKdfParams()`: a timed probe picks the strongest tier of
+a parameter ladder (128 MiB / t=3 ceiling down to OWASP's 19 MiB / t=2 floor, in
+`frontend/src/lib/config.ts`) that the device can derive within a 1 s unlock budget, with
+a `navigator.deviceMemory` cap and allocation-failure fallback for 1-2 GB phones.
+Parameters live in the vault record, so existing vaults keep their cost and can be
+re-wrapped via `changePassphrase()`.
 
 ### Background Sync API as progressive enhancement
 
@@ -332,8 +334,8 @@ persistence was denied — that combination is how a day's fieldwork disappears.
 | WebAuthn PRF unlock | — | M–L | ✅ **done** (real hardware only in CI terms) |
 | Multiple users per device | — | M | ✅ **done** |
 | Shared bearer token (`none` / `token`) | — | S | ✅ **done** (not per-user) |
-| KDF params raised 64 → 128 MiB | — | S | ✅ **done** on laptop; re-check on weak tablets |
-| Vitest unit tests for crypto + sync | 1 | M | ❌ remaining test gap |
+| KDF params raised 64 → 128 MiB | — | S | ✅ **done**, with per-device calibration down a ladder |
+| Vitest unit tests for crypto + sync | 1 | M | partial — crypto + encoding covered; sync remains |
 | CSP hardening | 1 | S | ❌ |
 | Recovery codes | 1 | M | ❌ |
 | Re-benchmark KDF on weakest field device | 2 | S | ⚠️ laptop done |
