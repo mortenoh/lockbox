@@ -437,7 +437,7 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
                     </span>
                     <div className="grid">
                         <CardTitle className="text-lg">{vault.owner}</CardTitle>
-                        <CardDescription>Enter PIN to decrypt this device&rsquo;s notes</CardDescription>
+                        <CardDescription>Enter PIN to unlock</CardDescription>
                     </div>
                 </div>
             </CardHeader>
@@ -572,8 +572,7 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
                     <CardTitle className="text-xl">Add a user</CardTitle>
                 </div>
                 <CardDescription>
-                    Their own secret, their own key. Notes they write here are unreadable to the
-                    other users of this device.
+                    Their notes are unreadable to the other users of this device.
                 </CardDescription>
             </CardHeader>
 
@@ -589,9 +588,7 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
                         onChange={(e) => setOwner(e.target.value)}
                     />
                     <p className="text-muted-foreground text-xs">
-                        Published with every note so others can see who wrote it. Not secret, and
-                        not verified — a real deployment would take this from the authenticated
-                        DHIS2 session.
+                        Shown with every note so others can see who wrote it.
                     </p>
                 </div>
 
@@ -643,10 +640,9 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
                                 </>
                             ) : (
                                 <>
-                                    A short PIN protects this device&rsquo;s local cache, not the
-                                    dataset — synced notes stay recoverable from the server, and
-                                    unsynced ones are what a stolen device puts at risk. Biometric
-                                    unlock and a short auto-lock help far more than PIN length.
+                                    The PIN protects this device&rsquo;s local cache; synced notes
+                                    stay recoverable from the server. Biometric unlock and a short
+                                    auto-lock help more than PIN length.
                                 </>
                             )}
                         </AlertDescription>

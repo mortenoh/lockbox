@@ -3,7 +3,7 @@
 
 import type { ReactNode } from 'react'
 
-import { CloudDownload, ShieldAlert, Trash2 } from 'lucide-react'
+import { CloudDownload, Pencil, Plus, ShieldAlert, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,45 +11,55 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { DecryptedNote } from '@/hooks/use-notes'
 import { formatFullTime, formatRelative, initials } from '@/lib/format'
+import { renderMarkdown } from '@/lib/markdown'
 import { cn } from '@/lib/utils'
 
 interface NoteListProps {
     notes: DecryptedNote[]
     /** The current vault owner, so "mine" can be distinguished from "theirs". */
     owner: string
+    /** Opens the compose dialog. */
+    onCompose: () => void
+    /** Opens the compose dialog pre-filled with this note. */
+    onEdit: (note: DecryptedNote) => void
     onDelete: (id: string) => void
     onPull: () => void
 }
 
 /** The decrypted note list. Reads from IndexedDB, never from a server response. */
-export function NoteList({ notes, owner, onDelete, onPull }: NoteListProps) {
+export function NoteList({ notes, owner, onCompose, onEdit, onDelete, onPull }: NoteListProps) {
     return (
         <section className="grid gap-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
                 <div className="flex items-baseline gap-2">
                     <h2 className="text-lg font-semibold">Notes</h2>
                     <span className="text-muted-foreground text-sm">
                         {notes.length === 0 ? '' : `${notes.length} on this device`}
                     </span>
                 </div>
-                <Button variant="outline" size="sm" onClick={onPull}>
-                    <CloudDownload className="size-4" />
-                    Pull from server
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={onPull}>
+                        <CloudDownload className="size-4" />
+                        Pull from server
+                    </Button>
+                    <Button size="sm" onClick={onCompose}>
+                        <Plus className="size-4" />
+                        New note
+                    </Button>
+                </div>
             </div>
 
             {notes.length === 0 ? (
                 <Card>
                     <CardContent className="text-muted-foreground py-10 text-center text-sm">
-                        No notes yet. Write one above, or pull what other users have already
-                        published.
+                        No notes yet. Create one, or pull what other users have already published.
                     </CardContent>
                 </Card>
             ) : (
                 <ul className="grid gap-3">
                     {notes.map((note) => (
                         <li key={note.id}>
-                            <NoteCard note={note} owner={owner} onDelete={onDelete} />
+                            <NoteCard note={note} owner={owner} onEdit={onEdit} onDelete={onDelete} />
                         </li>
                     ))}
                 </ul>
@@ -61,6 +71,7 @@ export function NoteList({ notes, owner, onDelete, onPull }: NoteListProps) {
 interface NoteCardProps {
     note: DecryptedNote
     owner: string
+    onEdit: (note: DecryptedNote) => void
     onDelete: (id: string) => void
 }
 
@@ -93,14 +104,22 @@ function StatusChip({ tone, children }: { tone: 'synced' | 'queued' | 'local'; c
  * One note, with enough context to answer "who wrote this, when, and where does
  * it live" without opening anything.
  */
-function NoteCard({ note, owner, onDelete }: NoteCardProps) {
+function NoteCard({ note, owner, onEdit, onDelete }: NoteCardProps) {
     const author = note.content?.author ?? 'unknown'
     const mine = author === owner
     const edited = note.updatedAt > note.createdAt + 1000
     const unreadable = note.content === null
 
     return (
-        <Card className={cn(unreadable && 'border-destructive/40')}>
+        <Card
+            className={cn(
+                // color-mix keeps the tint theme-relative: a step toward
+                // foreground darkens the white card in light mode and lifts
+                // the dark card in dark mode.
+                'transition-all duration-150 hover:bg-[color-mix(in_oklch,var(--card),var(--foreground)_3%)] hover:shadow-md hover:ring-primary/35',
+                unreadable && 'border-destructive/40',
+            )}
+        >
             <CardContent className="grid gap-3">
                 <div className="flex items-start gap-3">
                     <span
@@ -143,19 +162,36 @@ function NoteCard({ note, owner, onDelete }: NoteCardProps) {
                         </span>
                     </div>
 
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                aria-label={`Delete ${note.content?.title ?? 'note'}`}
-                                onClick={() => onDelete(note.id)}
-                            >
-                                <Trash2 className="size-4" />
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Delete everywhere</TooltipContent>
-                    </Tooltip>
+                    <div className="flex items-center">
+                        {!unreadable && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        aria-label={`Edit ${note.content?.title ?? 'note'}`}
+                                        onClick={() => onEdit(note)}
+                                    >
+                                        <Pencil className="size-4" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Edit</TooltipContent>
+                            </Tooltip>
+                        )}
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label={`Delete ${note.content?.title ?? 'note'}`}
+                                    onClick={() => onDelete(note.id)}
+                                >
+                                    <Trash2 className="size-4" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Delete everywhere</TooltipContent>
+                        </Tooltip>
+                    </div>
                 </div>
 
                 {unreadable ? (
@@ -165,9 +201,12 @@ function NoteCard({ note, owner, onDelete }: NoteCardProps) {
                     </p>
                 ) : (
                     note.content?.body && (
-                        <p className="text-muted-foreground text-sm whitespace-pre-wrap">
-                            {note.content.body}
-                        </p>
+                        <div
+                            className="note-body text-muted-foreground text-sm"
+                            // Sanitized by renderMarkdown (DOMPurify) - see
+                            // lib/markdown.ts for why that is non-negotiable.
+                            dangerouslySetInnerHTML={{ __html: renderMarkdown(note.content.body) }}
+                        />
                     )
                 )}
 

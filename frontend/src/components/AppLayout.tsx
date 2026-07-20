@@ -120,51 +120,56 @@ export function AppLayout({
                 <nav className="flex flex-col gap-1 px-2 py-2">
                     {NAV_ITEMS.map((item) => {
                         const Icon = item.icon
+                        // Computed here, not via NavLink's className function:
+                        // the collapsed mode wraps the link in TooltipTrigger
+                        // asChild, and Radix's Slot coerces a function
+                        // className to its *source code string* - the browser
+                        // then applies every word of the function body as a
+                        // class. Routes are flat, so exact match is enough.
+                        const isActive = current === item.path
 
                         const link = (
                             <NavLink
                                 to={item.path === '' ? '/' : `/${item.path}`}
                                 end={item.path === ''}
                                 aria-label={item.label}
-                                className={({ isActive }) =>
-                                    cn(
-                                        // The active rail is a left border, not an
-                                        // overlay - it survives collapsed mode and
-                                        // gives the asymmetric rounding from the
-                                        // mockups for free.
-                                        'flex items-start gap-3 rounded-r-lg rounded-l-[4px] border-l-[3px] px-3 py-2 text-left text-sm transition-colors',
-                                        collapsed && 'justify-center px-0 py-2.5',
-                                        isActive
-                                            ? 'border-sidebar-primary bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                                            : 'text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground border-transparent',
-                                    )
-                                }
+                                className={cn(
+                                    // The active rail is a left border, not an
+                                    // overlay - it survives collapsed mode and
+                                    // gives the asymmetric rounding from the
+                                    // mockups for free.
+                                    'flex items-start gap-3 rounded-r-lg rounded-l-[4px] border-l-[3px] px-3 py-2 text-left text-sm transition-colors',
+                                    // Collapsed: no rail, no asymmetric corners -
+                                    // just a centered square tile per icon.
+                                    collapsed &&
+                                        'mx-auto flex size-10 items-center justify-center rounded-lg border-l-0 p-0',
+                                    isActive
+                                        ? 'border-sidebar-primary bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                                        : 'text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground border-transparent',
+                                )}
                             >
-                                {({ isActive }) => (
-                                    <>
-                                        <Icon
+                                <Icon
+                                    className={cn(
+                                        'size-4 shrink-0',
+                                        !collapsed && 'mt-0.5',
+                                        isActive && 'text-sidebar-accent-foreground',
+                                    )}
+                                    aria-hidden
+                                />
+                                {!collapsed && (
+                                    <span className="grid">
+                                        <span>{item.label}</span>
+                                        <span
                                             className={cn(
-                                                'mt-0.5 size-4 shrink-0',
-                                                isActive && 'text-sidebar-accent-foreground',
+                                                'text-xs',
+                                                isActive
+                                                    ? 'text-sidebar-accent-foreground/75'
+                                                    : 'text-muted-foreground',
                                             )}
-                                            aria-hidden
-                                        />
-                                        {!collapsed && (
-                                            <span className="grid">
-                                                <span>{item.label}</span>
-                                                <span
-                                                    className={cn(
-                                                        'text-xs',
-                                                        isActive
-                                                            ? 'text-sidebar-accent-foreground/75'
-                                                            : 'text-muted-foreground',
-                                                    )}
-                                                >
-                                                    {item.hint}
-                                                </span>
-                                            </span>
-                                        )}
-                                    </>
+                                        >
+                                            {item.hint}
+                                        </span>
+                                    </span>
                                 )}
                             </NavLink>
                         )
@@ -309,7 +314,9 @@ export function AppLayout({
                     </div>
                 </header>
 
-                <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 md:px-8">{children}</main>
+                {/* Full width - the reading-column cap made the app feel like a
+                    document on wide screens. */}
+                <main className="w-full flex-1 px-4 py-6 md:px-8">{children}</main>
             </div>
 
             <CommandPalette onLock={onLock} onSwitchUser={onSwitchUser} onPull={onPull} />

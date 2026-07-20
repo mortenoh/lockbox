@@ -171,3 +171,67 @@
     @apply font-sans;
     }
 }
+
+/* Rendered note bodies (sanitized Markdown). Kept as plain CSS rather than a
+   typography plugin: the handful of elements notes actually use, nothing else. */
+.note-body :is(p, ul, ol, pre, blockquote) {
+    margin: 0 0 0.5rem;
+}
+.note-body > :last-child {
+    margin-bottom: 0;
+}
+.note-body ul {
+    list-style: disc;
+    padding-left: 1.25rem;
+}
+.note-body ol {
+    list-style: decimal;
+    padding-left: 1.25rem;
+}
+.note-body :is(h1, h2, h3, h4) {
+    font-weight: 600;
+    font-size: 1em;
+    color: var(--foreground);
+    margin: 0.5rem 0 0.25rem;
+}
+.note-body strong {
+    color: var(--foreground);
+}
+.note-body a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.note-body code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--muted);
+    padding: 0.1em 0.3em;
+    border-radius: 0.3em;
+}
+.note-body pre {
+    background: var(--muted);
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    overflow-x: auto;
+}
+.note-body pre code {
+    background: transparent;
+    padding: 0;
+}
+.note-body blockquote {
+    border-left: 3px solid var(--border);
+    padding-left: 0.75rem;
+}
+.note-body table {
+    border-collapse: collapse;
+    margin: 0 0 0.5rem;
+}
+.note-body :is(th, td) {
+    border: 1px solid var(--border);
+    padding: 0.25rem 0.6rem;
+    text-align: left;
+}
+.note-body th {
+    color: var(--foreground);
+    font-weight: 600;
+}

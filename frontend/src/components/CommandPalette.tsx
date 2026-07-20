@@ -91,10 +91,11 @@ export function CommandPalette({ onLock, onSwitchUser, onPull }: CommandPaletteP
                         onSelect={() =>
                             run(() => {
                                 navigate('/')
-                                // The composer mounts with the navigation, so focus
-                                // has to wait for the frame that renders it.
+                                // The Notes page mounts with the navigation and
+                                // owns the compose dialog; the event has to wait
+                                // for the frame that renders its listener.
                                 requestAnimationFrame(() =>
-                                    document.getElementById('note-title')?.focus(),
+                                    document.dispatchEvent(new CustomEvent('lockbox:new-note')),
                                 )
                             })
                         }
