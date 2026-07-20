@@ -46,9 +46,14 @@
  *  - Uploads are PUTs keyed by a client-generated UUID, making a retry after a
  *    dropped connection an idempotent overwrite rather than a duplicate. This
  *    single choice removes most of the difficulty from retrying.
- *  - 4xx is treated as permanent (park it, tell the user), 5xx and network
- *    errors as transient (retry with exponential backoff). Retrying a 400
- *    forever is a classic way to build an infinite loop.
+ *  - Most 4xx is permanent (park it, tell the user). 401/403 are auth failures:
+ *    stop the drain, leave entries pending, clear the token so the UI can ask
+ *    again. 408/429 are transient. 5xx and network errors also retry with
+ *    exponential backoff. Retrying a 400 forever is a classic infinite loop.
+ *  - Automatic triggers always drain, then pull, in that order. Draining first
+ *    means the user's own unsent work wins last-write-wins against a stale
+ *    server copy. Pull then reconciles the outbox so a remote tombstone cannot
+ *    be undone by a later drain of a superseded put.
  *  - Triggers are deliberately redundant: `online`, tab focus, app boot, and a
  *    slow poll. The Background Sync API would let the *service worker* flush
  *    with the tab closed, but it is Chromium-only as of 2026 - no Safari, no
@@ -59,8 +64,8 @@
  *    you are online behind a captive portal.
  */
 
+import { clearToken, apiFetch } from '@/lib/api'
 import { decryptJson, encryptJson } from '@/lib/crypto'
-import { apiFetch } from '@/lib/api'
 import * as db from '@/lib/db'
 import type { NoteContent, OutboxEntry } from '@/lib/db'
 
@@ -250,18 +255,54 @@ async function probeServer(): Promise<Reachability> {
 // Uploading
 // ============================================================================
 
-type SendResult = { result: 'ok' | 'transient' | 'permanent'; message?: string }
+type SendResult =
+    | { result: 'ok' }
+    | { result: 'transient'; message?: string; retryAfterMs?: number }
+    | { result: 'permanent'; message?: string }
+    | { result: 'auth'; message?: string }
 
-/** Classify a response the same way regardless of which endpoint produced it. */
-function classify(response: Response): SendResult {
+/**
+ * Classify a response the same way regardless of which endpoint produced it.
+ *
+ * Exported for unit tests - the matrix of status codes is easy to get wrong and
+ * expensive to rediscover via e2e alone.
+ */
+export function classify(response: Response): SendResult {
     if (response.ok) return { result: 'ok' }
+
+    const status = response.status
+
+    // Credentials are wrong or gone. Not a property of the payload - parking
+    // every queue entry as "failed" would make the user re-save notes after
+    // fixing the token. Stop, surface unauthorized, leave entries pending.
+    if (status === 401 || status === 403) {
+        return { result: 'auth', message: `Not authorised (HTTP ${status})` }
+    }
+
+    // Temporary client-side conditions: try again later.
+    if (status === 408 || status === 429) {
+        return {
+            result: 'transient',
+            message: `Server asked to wait (HTTP ${status})`,
+            retryAfterMs: parseRetryAfterMs(response),
+        }
+    }
 
     // The server has judged this payload invalid. It will judge every retry the
     // same way, so retrying is pointless - park it for the user instead.
-    if (response.status >= 400 && response.status < 500) {
-        return { result: 'permanent', message: `Server rejected it (HTTP ${response.status})` }
+    if (status >= 400 && status < 500) {
+        return { result: 'permanent', message: `Server rejected it (HTTP ${status})` }
     }
-    return { result: 'transient', message: `Server error (HTTP ${response.status})` }
+    return { result: 'transient', message: `Server error (HTTP ${status})` }
+}
+
+/** Parse Retry-After as a delay in ms; ignore date forms and junk. */
+function parseRetryAfterMs(response: Response): number | undefined {
+    const raw = response.headers.get('Retry-After')
+    if (!raw) return undefined
+    const seconds = Number(raw)
+    if (!Number.isFinite(seconds) || seconds < 0) return undefined
+    return Math.min(seconds * 1_000, BACKOFF_MAX_MS)
 }
 
 /**
@@ -340,9 +381,16 @@ export async function drain({ force = false }: { force?: boolean } = {}): Promis
         if (locked) return
 
         const reach = await probeServer()
+        if (reach === 'unauthorized') {
+            // Token is no longer accepted. Drop it so the UI prompts again
+            // instead of silently retrying with the same dead credential.
+            clearToken()
+            setState({ online: true, unauthorized: true, syncing: false })
+            return
+        }
         setState({
             online: reach !== 'unreachable',
-            unauthorized: reach === 'unauthorized',
+            unauthorized: false,
         })
         if (reach !== 'ok') {
             setState({ syncing: false })
@@ -358,25 +406,36 @@ export async function drain({ force = false }: { force?: boolean } = {}): Promis
         setState({ syncing: true, lastError: null })
 
         for (const entry of pending) {
-            const { result, message } = await sendEntry(entry, mode)
+            const outcome = await sendEntry(entry, mode)
 
-            if (result === 'ok') {
+            if (outcome.result === 'ok') {
                 await db.dequeue(entry.seq)
                 if (entry.op === 'put') await db.markNoteSynced(entry.ownerId, entry.noteId)
                 continue
             }
 
-            if (result === 'permanent') {
-                await db.recordFailure(entry.seq, message ?? 'Rejected', true)
+            if (outcome.result === 'auth') {
+                clearToken()
+                setState({
+                    unauthorized: true,
+                    online: true,
+                    lastError: outcome.message ?? null,
+                })
+                break
+            }
+
+            if (outcome.result === 'permanent') {
+                await db.recordFailure(entry.seq, outcome.message ?? 'Rejected', true)
                 continue
             }
 
             // Transient: stop here rather than skipping ahead, so later writes
             // cannot overtake this one on the server.
-            await db.recordFailure(entry.seq, message ?? 'Unreachable', false)
-            const delay = Math.min(BACKOFF_BASE_MS * 2 ** (entry.attempts + 1), BACKOFF_MAX_MS)
+            await db.recordFailure(entry.seq, outcome.message ?? 'Unreachable', false)
+            const exponential = Math.min(BACKOFF_BASE_MS * 2 ** (entry.attempts + 1), BACKOFF_MAX_MS)
+            const delay = outcome.retryAfterMs ?? exponential
             backoffUntil = Date.now() + delay
-            setState({ lastError: message ?? null })
+            setState({ lastError: outcome.message ?? null })
             break
         }
 
@@ -430,16 +489,78 @@ export async function fetchServerState(): Promise<{
  *   "unreadable". That failure is the point: it shows exactly why this mode
  *   cannot support multiple users.
  *
- * Last-write-wins on `updatedAt`. Adequate for one user per device; a genuinely
+ * Last-write-wins on `updatedAt`, with the outbox consulted first so unsent
+ * local work is not stomped and then re-uploaded against a newer remote. See
+ * {@link decideRemoteApply}. Adequate for one user per device; a genuinely
  * concurrent multi-writer design would need per-field merging or a CRDT.
  *
  * @returns how many local records were created or updated.
  */
 export async function pull(): Promise<number> {
+    // Never merge remote state while a drain is mid-flight: that is the race
+    // that lets a pull overwrite an unsent local note. If the drain is stuck
+    // (a stalled fetch), give up rather than merge concurrently.
+    if (!(await waitWhile(() => draining))) return 0
+
     if (!activeOwnerId) return 0
     if ((await probeServer()) !== 'ok') return 0
 
     return state.mode === 'plaintext' ? pullPlaintext() : pullEncrypted()
+}
+
+/**
+ * Decide whether a remote record should land, given pending outbox work.
+ *
+ * Pure so the matrix is unit-testable without IndexedDB. The latest pending
+ * entry for the note (highest seq) is the local intent that has not yet
+ * reached the server.
+ *
+ * - pending delete + remote live → skip (local delete not uploaded yet)
+ * - pending put newer/equal than remote → skip (local-in-flight wins)
+ * - remote wins → apply, and drop superseded outbox entries for that note
+ */
+export function decideRemoteApply(
+    latest: OutboxEntry | null,
+    remote: { updatedAt: number; deleted?: boolean },
+    existingUpdatedAt: number | null,
+): 'skip' | 'apply' | 'apply-and-dequeue' {
+    if (latest) {
+        if (latest.op === 'delete') {
+            // Local delete still unsent. A live remote row must not resurrect
+            // the note before the delete drains. A remote tombstone is the
+            // same outcome - apply clean-up and drop the queue entry.
+            return remote.deleted ? 'apply-and-dequeue' : 'skip'
+        }
+
+        const localUpdated = latest.payload?.updatedAt ?? 0
+        if (localUpdated >= remote.updatedAt) {
+            return 'skip'
+        }
+        // Remote is strictly newer than the unsent put - take remote, drop put.
+        return 'apply-and-dequeue'
+    }
+
+    if (existingUpdatedAt !== null && existingUpdatedAt >= remote.updatedAt) {
+        return 'skip'
+    }
+    return 'apply'
+}
+
+/** Highest-seq pending entry for a note, or null. */
+export function latestPending(entries: OutboxEntry[]): OutboxEntry | null {
+    if (entries.length === 0) return null
+    return entries.reduce((best, e) => (e.seq > best.seq ? e : best))
+}
+
+async function pendingByNoteId(ownerId: string): Promise<Map<string, OutboxEntry[]>> {
+    const map = new Map<string, OutboxEntry[]>()
+    for (const entry of await db.getOutbox(ownerId)) {
+        if (entry.status !== 'pending') continue
+        const list = map.get(entry.noteId) ?? []
+        list.push(entry)
+        map.set(entry.noteId, list)
+    }
+    return map
 }
 
 /** Pull readable records and encrypt them for local storage. */
@@ -454,19 +575,31 @@ async function pullPlaintext(): Promise<number> {
     if (!response.ok) return 0
 
     const { notes } = (await response.json()) as { notes: PlainNoteWire[] }
-    const local = new Map((await db.getNotes(activeOwnerId!)).map((n) => [n.id, n]))
+    const ownerId = activeOwnerId!
+    const local = new Map((await db.getNotes(ownerId)).map((n) => [n.id, n]))
+    const pendingMap = await pendingByNoteId(ownerId)
     let changed = 0
 
     for (const remote of notes) {
         const existing = local.get(remote.id)
-        if (existing && existing.updatedAt >= remote.updatedAt) continue
+        const latest = latestPending(pendingMap.get(remote.id) ?? [])
+        const decision = decideRemoteApply(
+            latest,
+            remote,
+            existing ? existing.updatedAt : null,
+        )
+        if (decision === 'skip') continue
 
-        // A tombstone means someone deleted it elsewhere. Apply the deletion
-        // rather than re-creating the record, or deletions would never converge.
         if (remote.deleted) {
+            // Tombstone: remove local copy if present. Even without a local
+            // row, dequeue superseded puts so a later drain cannot resurrect.
             if (existing) {
-                await db.deleteNote(activeOwnerId!, remote.id)
+                await db.deleteNote(ownerId, remote.id)
                 changed += 1
+            }
+            if (decision === 'apply-and-dequeue') {
+                await db.dequeueForNote(ownerId, remote.id)
+                pendingMap.delete(remote.id)
             }
             continue
         }
@@ -487,8 +620,12 @@ async function pullPlaintext(): Promise<number> {
             updatedAt: remote.updatedAt,
             synced: true,
             origin: 'pulled',
-            ownerId: activeOwnerId!,
+            ownerId,
         })
+        if (decision === 'apply-and-dequeue') {
+            await db.dequeueForNote(ownerId, remote.id)
+            pendingMap.delete(remote.id)
+        }
         changed += 1
     }
 
@@ -501,22 +638,38 @@ async function pullEncrypted(): Promise<number> {
     if (!response.ok) return 0
 
     const { notes } = (await response.json()) as { notes: (db.NotePayload & { deleted?: boolean })[] }
-    const local = new Map((await db.getNotes(activeOwnerId!)).map((n) => [n.id, n]))
+    const ownerId = activeOwnerId!
+    const local = new Map((await db.getNotes(ownerId)).map((n) => [n.id, n]))
+    const pendingMap = await pendingByNoteId(ownerId)
     let changed = 0
 
     for (const remote of notes) {
         const existing = local.get(remote.id)
-        if (existing && existing.updatedAt >= remote.updatedAt) continue
+        const latest = latestPending(pendingMap.get(remote.id) ?? [])
+        const decision = decideRemoteApply(
+            latest,
+            remote,
+            existing ? existing.updatedAt : null,
+        )
+        if (decision === 'skip') continue
 
         if (remote.deleted) {
             if (existing) {
-                await db.deleteNote(activeOwnerId!, remote.id)
+                await db.deleteNote(ownerId, remote.id)
                 changed += 1
+            }
+            if (decision === 'apply-and-dequeue') {
+                await db.dequeueForNote(ownerId, remote.id)
+                pendingMap.delete(remote.id)
             }
             continue
         }
 
-        await db.putNote({ ...remote, synced: true, origin: 'pulled', ownerId: activeOwnerId! })
+        await db.putNote({ ...remote, synced: true, origin: 'pulled', ownerId })
+        if (decision === 'apply-and-dequeue') {
+            await db.dequeueForNote(ownerId, remote.id)
+            pendingMap.delete(remote.id)
+        }
         changed += 1
     }
 
@@ -524,14 +677,35 @@ async function pullEncrypted(): Promise<number> {
 }
 
 /**
+ * Wait until a predicate is false. Used to keep pull behind an in-flight drain.
+ *
+ * Bounded: a drain wedged on a stalled fetch must not pin every queued pull
+ * trigger forever. Returns false when the wait was abandoned, so callers can
+ * bail instead of proceeding concurrently with whatever is stuck.
+ */
+async function waitWhile(predicate: () => boolean, maxWaitMs = 10_000): Promise<boolean> {
+    const deadline = Date.now() + maxWaitMs
+    while (predicate()) {
+        if (Date.now() >= deadline) return false
+        await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    return true
+}
+
+/**
  * Pull remote changes if enough time has passed.
  *
  * Guarded by its own timestamp rather than piggybacking on the drain interval,
- * so a burst of local writes cannot trigger a burst of full fetches.
+ * so a burst of local writes cannot trigger a burst of full fetches. Always
+ * waits for an in-flight drain first - the second half of drain-then-pull.
+ *
+ * @returns whether a pull actually ran, so a manual trigger can tell "nothing
+ * new" apart from "skipped because one was already in flight".
  */
-async function maybePull(minIntervalMs = PULL_INTERVAL_MS): Promise<void> {
-    if (pulling) return
-    if (Date.now() - lastPullAttempt < minIntervalMs) return
+async function maybePull(minIntervalMs = PULL_INTERVAL_MS): Promise<boolean> {
+    if (!(await waitWhile(() => draining))) return false
+    if (pulling) return false
+    if (Date.now() - lastPullAttempt < minIntervalMs) return false
 
     pulling = true
     lastPullAttempt = Date.now()
@@ -545,6 +719,24 @@ async function maybePull(minIntervalMs = PULL_INTERVAL_MS): Promise<void> {
     } finally {
         pulling = false
     }
+    return true
+}
+
+/**
+ * Drain the outbox, then pull remote changes.
+ *
+ * Every automatic trigger goes through here so drain and pull never race. A
+ * post-write flush that only needs to upload can still call {@link drain}
+ * alone.
+ *
+ * @returns whether the pull half actually ran (see {@link maybePull}).
+ */
+export async function runSyncCycle(opts?: {
+    forceDrain?: boolean
+    minPullIntervalMs?: number
+}): Promise<boolean> {
+    await drain({ force: opts?.forceDrain })
+    return maybePull(opts?.minPullIntervalMs ?? PULL_INTERVAL_MS)
 }
 
 /** Fetch remote changes now, regardless of the interval. */
@@ -561,8 +753,7 @@ export function start(): void {
     window.addEventListener('online', () => {
         backoffUntil = 0 // A fresh connection deserves an immediate attempt.
         setState({ online: true })
-        void drain({ force: true })
-        void maybePull(0)
+        void runSyncCycle({ forceDrain: true, minPullIntervalMs: 0 })
     })
 
     window.addEventListener('offline', () => setState({ online: false }))
@@ -571,15 +762,45 @@ export function start(): void {
     // returning to the tab is the most reliable moment to flush.
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
-            void drain()
-            void maybePull(PULL_ON_FOCUS_MIN_MS)
+            void runSyncCycle({ minPullIntervalMs: PULL_ON_FOCUS_MIN_MS })
         }
     })
 
-    setInterval(() => void drain(), POLL_INTERVAL_MS)
-    setInterval(() => void maybePull(), PULL_INTERVAL_MS)
+    // One timer for the full cycle keeps drain-before-pull even under poll.
+    // Pull still has its own min-interval inside maybePull so this does not
+    // full-fetch every 30s - only drain does; pulls no-op until their floor.
+    setInterval(() => void runSyncCycle(), POLL_INTERVAL_MS)
 
     // Push local work first, then fetch. Draining before pulling means the
     // user's own edits win a last-write-wins race against a stale server copy.
-    void drain({ force: true }).then(() => maybePull(0))
+    // Outbox reconcile on pull is the other half of that guarantee.
+    void runSyncCycle({ forceDrain: true, minPullIntervalMs: 0 })
+}
+
+/**
+ * Reset module state between unit tests. Not for app code.
+ *
+ * @internal
+ */
+export function __resetForTests(): void {
+    listeners.clear()
+    state = {
+        online: typeof navigator !== 'undefined' ? navigator.onLine : true,
+        syncing: false,
+        pending: 0,
+        failed: 0,
+        lastSyncAt: null,
+        lastPullAt: null,
+        lastError: null,
+        mode: DEFAULT_SYNC_MODE,
+        blockedByLock: false,
+        unauthorized: false,
+    }
+    backoffUntil = 0
+    draining = false
+    started = false
+    pulling = false
+    lastPullAttempt = 0
+    unlockedDecryptor = null
+    activeOwnerId = null
 }

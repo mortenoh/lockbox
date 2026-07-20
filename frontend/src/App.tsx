@@ -66,7 +66,9 @@ export default function App() {
         session.setLastUserId(unlockedVault.id)
         sync.setActiveOwner(unlockedVault.id)
         sync.start()
-        void sync.drain({ force: true })
+        // Full cycle, not just a drain: start() only boots the triggers once,
+        // so a re-unlock must ask for fresh remote data itself.
+        void sync.runSyncCycle({ forceDrain: true, minPullIntervalMs: 0 })
     }, [])
 
     /** Drop the key but keep the user selected. */
@@ -100,17 +102,25 @@ export default function App() {
     )
 
     const handlePull = useCallback(async () => {
-        const changed = await sync.pull()
+        // Drain first so unsent local work is not clobbered by a remote LWW win.
+        const before = sync.getState().lastPullAt
+        const pulled = await sync.runSyncCycle({ forceDrain: true, minPullIntervalMs: 0 })
         await reload()
 
+        const after = sync.getState().lastPullAt
+        const changed = after !== null && after !== before
+
         // Silence was how the broken pull went unnoticed - always say what happened.
-        if (changed > 0) {
-            toast.success(`Pulled ${changed} note${changed === 1 ? '' : 's'}`, {
+        // lastPullAt only advances when pull actually wrote something.
+        if (changed) {
+            toast.success('Pulled remote changes', {
                 description:
                     sync.getState().mode === 'plaintext'
                         ? 'Re-encrypted with this user’s key before storing.'
                         : 'Copied as ciphertext. Records from another device will not open here.',
             })
+        } else if (!pulled) {
+            toast.info('Sync already in progress')
         } else {
             toast.info('Nothing new to pull')
         }
