@@ -53,7 +53,9 @@ export function UnlockScreen({ initialUserId, onUnlocked }: UnlockScreenProps) {
     const [storageError, setStorageError] = useState<string | null>(null)
     const [screen, setScreen] = useState<Screen>('pick')
     const [selected, setSelected] = useState<VaultRecord | null>(null)
-    const [biometricAvailable, setBiometricAvailable] = useState(false)
+    // null while the probe is still running - the distinction matters on a
+    // reload, where the unlock form renders before the answer arrives.
+    const [biometricAvailable, setBiometricAvailable] = useState<boolean | null>(null)
 
     const refresh = useCallback(async () => {
         let list: VaultRecord[]
@@ -307,7 +309,8 @@ function UserPicker({ vaults, onSelect, onAdd, onRemoved }: UserPickerProps) {
 
 interface UnlockFormProps {
     vault: VaultRecord
-    biometricAvailable: boolean
+    /** null while the availability probe is still in flight. */
+    biometricAvailable: boolean | null
     onBack: () => void
     onUnlocked: (vault: VaultRecord) => void
 }
@@ -321,8 +324,16 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
     // When biometrics are enrolled they become the whole screen: one tap, no
     // keypad. The PIN is still there, one link away, because an authenticator
     // is bound to a single device and can fail or be unavailable.
-    const canUseBiometric = Boolean(vault.prf) && biometricAvailable
-    const [showPin, setShowPin] = useState(!canUseBiometric)
+    //
+    // Derived, not initialised into state: on a reload this form mounts before
+    // the availability probe answers, and a useState snapshot taken at that
+    // moment left the keypad up next to the biometric button forever. While
+    // the probe is pending (null) an enrolled vault is treated as available -
+    // the credential was created on this very device - so the keypad does not
+    // flash in and out; if the probe then says no, the keypad appears.
+    const canUseBiometric = Boolean(vault.prf) && biometricAvailable !== false
+    const [pinRequested, setPinRequested] = useState(false)
+    const showPin = pinRequested || !canUseBiometric
 
     async function submit() {
         if (submitting.current) return
@@ -424,7 +435,7 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
                         variant="ghost"
                         size="sm"
                         className="text-muted-foreground"
-                        onClick={() => setShowPin(true)}
+                        onClick={() => setPinRequested(true)}
                     >
                         Use PIN instead
                     </Button>
