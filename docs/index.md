@@ -28,6 +28,13 @@ inversion of the light one.
 | ![Notes, desktop, light theme](assets/notes-desktop-light.png) | ![Notes, mobile, light theme](assets/notes-mobile-light.png) |
 | ![Notes, desktop, dark theme](assets/notes-desktop-dark.png) | ![Notes, mobile, dark theme](assets/notes-mobile-dark.png) |
 
+The unlock screen shares the app's top bar - connectivity and theme live there in
+both states, so locking is a state change, not a different place:
+
+| Light | Dark |
+| --- | --- |
+| ![Unlock screen, light theme](assets/unlock-desktop-light.png) | ![Unlock screen, dark theme](assets/unlock-desktop-dark.png) |
+
 ## The correction that shapes everything else
 
 An earlier version of this project encrypted the data *all the way to the server*, and
