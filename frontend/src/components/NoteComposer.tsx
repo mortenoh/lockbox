@@ -54,6 +54,14 @@ export function NoteComposer({ owner, ownerId, editing = null, onSaved }: NoteCo
         event.preventDefault()
         if (!title.trim()) return
 
+        // A save with nothing changed is a close, not a write. Writing would
+        // claim "saved", re-queue an identical upload, and flip a synced note
+        // back to "queued" - all for a no-op.
+        if (editing && title.trim() === editing.title && body === editing.body) {
+            await onSaved()
+            return
+        }
+
         setBusy(true)
         try {
             const now = Date.now()
