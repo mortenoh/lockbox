@@ -115,7 +115,7 @@ export function PinPad({
                         type="button"
                         variant="outline"
                         disabled={disabled}
-                        className="h-14 text-lg font-medium"
+                        className="bg-secondary h-14 text-2xl font-semibold"
                         onClick={() => press(digit)}
                     >
                         {digit}

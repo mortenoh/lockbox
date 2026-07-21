@@ -16,6 +16,25 @@ IndexedDB are AES-256-GCM ciphertext, the key that decrypts them is derived from
 passphrase the user types each session with Argon2id, and it is never written to disk
 anywhere.
 
+## What it looks like
+
+The UI follows a clinical-card design: IBM Plex type, a deep-green identity color,
+and dot chips carrying sync state (green: on server, amber: queued, gray: local
+metadata). The dark theme is a deliberate palette for low-light field use, not an
+inversion of the light one.
+
+| Desktop | Mobile |
+| --- | --- |
+| ![Notes, desktop, light theme](assets/notes-desktop-light.png) | ![Notes, mobile, light theme](assets/notes-mobile-light.png) |
+| ![Notes, desktop, dark theme](assets/notes-desktop-dark.png) | ![Notes, mobile, dark theme](assets/notes-mobile-dark.png) |
+
+The unlock screen shares the app's top bar - connectivity and theme live there in
+both states, so locking is a state change, not a different place:
+
+| Light | Dark |
+| --- | --- |
+| ![Unlock screen, light theme](assets/unlock-desktop-light.png) | ![Unlock screen, dark theme](assets/unlock-desktop-dark.png) |
+
 ## The correction that shapes everything else
 
 An earlier version of this project encrypted the data *all the way to the server*, and
