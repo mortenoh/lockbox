@@ -30,10 +30,12 @@ interface NoteListProps {
 export function NoteList({ notes, owner, onCompose, onEdit, onDelete, onPull }: NoteListProps) {
     return (
         <section className="grid gap-3">
-            <div className="flex items-center justify-between gap-2">
+            {/* flex-wrap: at 360px the buttons drop to their own row instead
+                of clipping off the right edge. */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-baseline gap-2">
                     <h2 className="text-lg font-semibold">Notes</h2>
-                    <span className="text-muted-foreground text-sm">
+                    <span className="text-muted-foreground text-sm whitespace-nowrap">
                         {notes.length === 0 ? '' : `${notes.length} on this device`}
                     </span>
                 </div>
