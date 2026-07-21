@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Fingerprint, KeyRound, Loader2, Plus, ShieldCheck, Trash2, UserRound } from 'lucide-react'
+import { Fingerprint, KeyRound, Loader2, Plus, Trash2, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { PinPad } from '@/components/PinPad'
+import { ThemeToggle } from '@/components/ThemeToggle'
 import {
     AlertDialog,
     AlertDialogAction,
@@ -101,13 +102,30 @@ export function UnlockScreen({ initialUserId, onUnlocked }: UnlockScreenProps) {
     if (vaults === null) return <LoadingCard />
 
     return (
-        <div className="relative flex min-h-svh w-full flex-col justify-center px-4 py-10">
-            <div
-                aria-hidden
-                className="from-primary/10 pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,var(--tw-gradient-from),transparent_60%)]"
-            />
+        <div className="flex min-h-svh w-full flex-col">
+            {/* The same top bar the unlocked app has - same surface, border and
+                height - so locking does not feel like leaving the app. Brand
+                left; connectivity and theme right, where the unlocked header
+                keeps its status cluster. */}
+            <header className="bg-sidebar sticky top-0 z-10 border-b">
+                <div className="flex items-center gap-2.5 px-4 py-2.5 md:px-6">
+                    <div className="bg-foreground text-background dark:bg-primary dark:text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg">
+                        <KeyRound className="size-4" aria-hidden />
+                    </div>
+                    <span className="text-lg font-bold tracking-tight">Lockbox</span>
+                    <div className="flex-1" />
+                    <OnlineChip />
+                    <ThemeToggle />
+                </div>
+            </header>
 
-            <div className="mx-auto w-full max-w-md">
+            <div className="relative flex flex-1 flex-col justify-center px-4 py-10">
+                <div
+                    aria-hidden
+                    className="from-primary/10 pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,var(--tw-gradient-from),transparent_60%)]"
+                />
+
+                <div className="mx-auto w-full max-w-md">
                 {screen === 'pick' && (
                     <UserPicker
                         vaults={vaults}
@@ -129,13 +147,14 @@ export function UnlockScreen({ initialUserId, onUnlocked }: UnlockScreenProps) {
                     />
                 )}
 
-                {screen === 'create' && (
-                    <CreateForm
-                        canCancel={vaults.length > 0}
-                        onCancel={() => setScreen('pick')}
-                        onCreated={onUnlocked}
-                    />
-                )}
+                    {screen === 'create' && (
+                        <CreateForm
+                            canCancel={vaults.length > 0}
+                            onCancel={() => setScreen('pick')}
+                            onCreated={onUnlocked}
+                        />
+                    )}
+                </div>
             </div>
         </div>
     )
@@ -236,12 +255,10 @@ function UserPicker({ vaults, onSelect, onAdd, onRemoved }: UserPickerProps) {
 
     return (
         <Card className="shadow-lg">
+            {/* The brand lives in the shared top bar now - this card only has
+                to ask its one question. */}
             <CardHeader>
-                <div className="flex items-center gap-2">
-                    <ShieldCheck className="text-primary size-6" aria-hidden />
-                    <CardTitle className="text-2xl">Lockbox</CardTitle>
-                </div>
-                <CardDescription>Who is using this device?</CardDescription>
+                <CardTitle className="text-lg">Who is using this device?</CardTitle>
             </CardHeader>
 
             <CardContent className="grid gap-2">
@@ -341,28 +358,20 @@ function useOnline() {
     return online
 }
 
-/** Brand row shared by the unlock card: mark, wordmark, connectivity chip. */
-function BrandRow() {
+/** Connectivity chip for the locked top bar. */
+function OnlineChip() {
     const online = useOnline()
     return (
-        <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-                <div className="bg-foreground text-background dark:bg-primary dark:text-primary-foreground flex size-7 items-center justify-center rounded-lg">
-                    <KeyRound className="size-4" aria-hidden />
-                </div>
-                <span className="font-bold tracking-tight">Lockbox</span>
-            </div>
-            <span className="border-border bg-secondary text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px] font-medium tracking-wider uppercase">
-                <span
-                    className={cn(
-                        'size-[7px] rounded-full',
-                        online ? 'bg-status-synced' : 'bg-status-local',
-                    )}
-                    aria-hidden
-                />
-                {online ? 'Online' : 'Offline'}
-            </span>
-        </div>
+        <span className="border-border bg-secondary text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px] font-medium tracking-wider uppercase">
+            <span
+                className={cn(
+                    'size-[7px] rounded-full',
+                    online ? 'bg-status-synced' : 'bg-status-local',
+                )}
+                aria-hidden
+            />
+            {online ? 'Online' : 'Offline'}
+        </span>
     )
 }
 
@@ -429,8 +438,7 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
 
     return (
         <Card className="shadow-lg">
-            <CardHeader className="grid gap-4">
-                <BrandRow />
+            <CardHeader>
                 <div className="flex items-center gap-3">
                     <span className="bg-accent text-accent-foreground flex size-9 items-center justify-center rounded-full font-mono text-sm font-semibold">
                         {initials(vault.owner)}
@@ -498,12 +506,6 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
                         <UserRound className="size-4" />
                         Switch user
                     </Button>
-                    {/* Trust microcopy from the mockups: state the mechanism,
-                        quietly, where a person deciding whether to type their
-                        PIN is actually looking. */}
-                    <span className="text-muted-foreground/70 font-mono text-[11px]">
-                        AES-256 &middot; keys never leave device
-                    </span>
                 </div>
             </CardContent>
         </Card>
