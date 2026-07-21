@@ -56,7 +56,8 @@ test.describe('offline', () => {
 
         await addNote(page, 'Written offline', 'No connectivity')
 
-        await expect(page.getByText('this device only')).toBeVisible()
+        // exact: the composer's helper copy also contains the word "queued".
+        await expect(page.getByText('queued', { exact: true })).toBeVisible()
         const { outbox, notes } = await readIndexedDb(page)
         expect(notes).toHaveLength(1)
         expect(outbox).toHaveLength(1)

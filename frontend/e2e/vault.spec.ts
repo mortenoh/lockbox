@@ -53,7 +53,7 @@ test.describe('vault', () => {
         // Detected by AES-GCM's auth tag failing during unwrap - there is no
         // stored password hash being compared.
         await expect(page.getByText('Wrong PIN.')).toBeVisible()
-        await expect(page.getByRole('button', { name: 'Encrypt & save' })).toBeHidden()
+        await expect(page.getByRole('button', { name: 'New note' })).toBeHidden()
     })
 
     test('the correct PIN unlocks and decrypts existing notes', async ({ page }) => {

@@ -34,7 +34,7 @@ test.describe('double submission', () => {
             for (let i = 0; i < 5; i += 1) button?.click()
         })
 
-        await expect(page.getByRole('button', { name: 'Encrypt & save' })).toBeVisible({
+        await expect(page.getByRole('button', { name: 'New note' })).toBeVisible({
             timeout: 20_000,
         })
 
@@ -65,7 +65,7 @@ test.describe('double submission', () => {
 
         // Either the spinner label appears, or derivation finished first - both
         // are fine, but the button must never look idle while busy.
-        await expect(page.getByRole('button', { name: 'Encrypt & save' })).toBeVisible({
+        await expect(page.getByRole('button', { name: 'New note' })).toBeVisible({
             timeout: 20_000,
         })
     })

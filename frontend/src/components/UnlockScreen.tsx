@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Fingerprint, KeyRound, Loader2, Plus, ShieldCheck, Trash2, UserRound } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { PinPad } from '@/components/PinPad'
 import {
@@ -22,7 +23,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { DEFAULT_KDF } from '@/lib/config'
+import { DEFAULT_KDF, PIN_LENGTH } from '@/lib/config'
 import {
     adoptSessionKey,
     createVault,
@@ -320,7 +321,6 @@ interface UnlockFormProps {
 
 function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFormProps) {
     const [secret, setSecret] = useState('')
-    const [error, setError] = useState<string | null>(null)
     const [busy, setBusy] = useState<'secret' | 'biometric' | null>(null)
     const submitting = useRef(false)
 
@@ -342,18 +342,20 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
         if (submitting.current) return
         submitting.current = true
 
-        setError(null)
         setBusy('secret')
         try {
             if (await unlockVault(secret, vault)) {
                 await db.requestPersistence()
                 onUnlocked(vault)
             } else {
-                setError('Wrong PIN.')
+                // A toast, not an inline alert: the panel used to appear below
+                // the pad and shove the layout around. The cleared dots are
+                // the in-place signal; the toast carries the words.
+                toast.error('Wrong PIN.')
                 setSecret('')
             }
         } catch (err) {
-            setError(`Could not unlock: ${err instanceof Error ? err.message : String(err)}`)
+            toast.error(`Could not unlock: ${err instanceof Error ? err.message : String(err)}`)
         } finally {
             submitting.current = false
             setBusy(null)
@@ -362,13 +364,12 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
 
     async function submitBiometric() {
         if (!vault.prf) return
-        setError(null)
         setBusy('biometric')
         try {
             let reason: string | null = null
             const dek = await unlockWithBiometric(vault.prf, (r) => (reason = r))
             if (!dek) {
-                setError(reason ?? 'Biometric unlock was cancelled or unavailable.')
+                toast.error(reason ?? 'Biometric unlock was cancelled or unavailable.')
                 return
             }
             adoptSessionKey(dek)
@@ -388,7 +389,7 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
                     </span>
                     <div className="grid">
                         <CardTitle className="text-lg">{vault.owner}</CardTitle>
-                        <CardDescription>Unlock to decrypt this device&rsquo;s notes</CardDescription>
+                        <CardDescription>Enter PIN to unlock</CardDescription>
                     </div>
                 </div>
             </CardHeader>
@@ -444,12 +445,6 @@ function UnlockForm({ vault, biometricAvailable, onBack, onUnlocked }: UnlockFor
                     </Button>
                 )}
 
-                {error && (
-                    <Alert variant="destructive">
-                        <AlertDescription>{error}</AlertDescription>
-                    </Alert>
-                )}
-
                 <div className="flex items-center justify-between">
                     <Button variant="ghost" size="sm" onClick={onBack}>
                         <UserRound className="size-4" />
@@ -480,15 +475,16 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
 
     // The submit button is disabled until both fields are valid, so `create`
     // can only ever run on a complete form. Nothing here re-checks them.
+    // New PINs are exactly PIN_LENGTH digits; only the pad enforces it.
     const trimmedOwner = owner.trim()
-    const isComplete = trimmedOwner.length > 0 && secret.length >= 4
+    const isComplete = trimmedOwner.length > 0 && secret.length >= PIN_LENGTH
 
     // The one incomplete state worth shouting about: the PIN is done but the
     // name is not, so the user thinks they are finished and the hint at the
     // bottom of the card is easy to miss. Marking the field itself is what
     // points them at the right place. An untouched form stays unmarked - red
     // borders before anyone typed anything is scolding, not guidance.
-    const nameMissing = secret.length >= 4 && trimmedOwner.length === 0
+    const nameMissing = secret.length >= PIN_LENGTH && trimmedOwner.length === 0
 
     async function create() {
         // A ref, not the `busy` state: setBusy only takes effect on the next
@@ -522,8 +518,7 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
                     <CardTitle className="text-xl">Add a user</CardTitle>
                 </div>
                 <CardDescription>
-                    Their own secret, their own key. Notes they write here are unreadable to the
-                    other users of this device.
+                    Their notes are unreadable to the other users of this device.
                 </CardDescription>
             </CardHeader>
 
@@ -539,9 +534,7 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
                         onChange={(e) => setOwner(e.target.value)}
                     />
                     <p className="text-muted-foreground text-xs">
-                        Published with every note so others can see who wrote it. Not secret, and
-                        not verified — a real deployment would take this from the authenticated
-                        DHIS2 session.
+                        Shown with every note so others can see who wrote it.
                     </p>
                 </div>
 
@@ -583,7 +576,7 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
                                 <>
                                     {!trimmedOwner
                                         ? 'Enter a name to continue.'
-                                        : 'Enter at least four digits.'}
+                                        : `Enter ${PIN_LENGTH} digits.`}
                                 </>
                             ) : isCommonPin(secret) ? (
                                 <>
@@ -593,10 +586,9 @@ function CreateForm({ canCancel, onCancel, onCreated }: CreateFormProps) {
                                 </>
                             ) : (
                                 <>
-                                    A short PIN protects this device&rsquo;s local cache, not the
-                                    dataset — synced notes stay recoverable from the server, and
-                                    unsynced ones are what a stolen device puts at risk. Biometric
-                                    unlock and a short auto-lock help far more than PIN length.
+                                    The PIN protects this device&rsquo;s local cache; synced notes
+                                    stay recoverable from the server. Biometric unlock and a short
+                                    auto-lock help more than PIN length.
                                 </>
                             )}
                         </AlertDescription>

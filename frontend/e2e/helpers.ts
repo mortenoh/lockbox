@@ -28,14 +28,9 @@ export async function createUser(page: Page, name: string, pin: string): Promise
     await expectUnlocked(page)
 }
 
-/**
- * Wait until the app is unlocked.
- *
- * Keys off the compose button rather than the "New note" card title: shadcn's
- * CardTitle renders a plain div, so getByRole('heading') never matches it.
- */
+/** Wait until the app is unlocked - the notes page header renders "New note". */
 export async function expectUnlocked(page: Page): Promise<void> {
-    await expect(page.getByRole('button', { name: 'Encrypt & save' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'New note' })).toBeVisible()
 }
 
 /** Unlock an existing user from the picker. */
@@ -46,11 +41,12 @@ export async function unlockAs(page: Page, name: string, pin: string): Promise<v
     await page.getByRole('button', { name: 'Unlock', exact: true }).click()
 }
 
-/** Write a note and wait for it to appear in the list. */
+/** Write a note through the compose dialog and wait for it in the list. */
 export async function addNote(page: Page, title: string, body = ''): Promise<void> {
+    await page.getByRole('button', { name: 'New note' }).click()
     await page.getByLabel('Title').fill(title)
     if (body) await page.getByLabel('Body').fill(body)
-    await page.getByRole('button', { name: 'Encrypt & save' }).click()
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(page.getByText(title, { exact: true })).toBeVisible()
 }
 

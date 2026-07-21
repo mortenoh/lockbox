@@ -117,38 +117,39 @@ export function AppLayout({
                 <nav className="flex flex-col gap-1 px-2 py-2">
                     {NAV_ITEMS.map((item) => {
                         const Icon = item.icon
+                        // Computed here, not via NavLink's className function:
+                        // the collapsed mode wraps the link in TooltipTrigger
+                        // asChild, and Radix's Slot coerces a function
+                        // className to its *source code string* - the browser
+                        // then applies every word of the function body as a
+                        // class. Routes are flat, so exact match is enough.
+                        const isActive = current === item.path
 
                         const link = (
                             <NavLink
                                 to={item.path === '' ? '/' : `/${item.path}`}
                                 end={item.path === ''}
                                 aria-label={item.label}
-                                className={({ isActive }) =>
-                                    cn(
-                                        'relative flex items-start gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                                        collapsed && 'justify-center px-0 py-2.5',
-                                        isActive
-                                            ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                                            : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
-                                    )
-                                }
+                                className={cn(
+                                    'relative flex items-start gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                                    collapsed && 'justify-center px-0 py-2.5',
+                                    isActive
+                                        ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                                        : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
+                                )}
                             >
-                                {({ isActive }) => (
-                                    <>
-                                        {/* Active marker stays legible when labels are hidden. */}
-                                        {isActive && (
-                                            <span className="bg-primary absolute inset-y-1.5 left-0 w-0.5 rounded-full" />
-                                        )}
-                                        <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
-                                        {!collapsed && (
-                                            <span className="grid">
-                                                <span>{item.label}</span>
-                                                <span className="text-muted-foreground text-xs">
-                                                    {item.hint}
-                                                </span>
-                                            </span>
-                                        )}
-                                    </>
+                                {/* Active marker stays legible when labels are hidden. */}
+                                {isActive && (
+                                    <span className="bg-primary absolute inset-y-1.5 left-0 w-0.5 rounded-full" />
+                                )}
+                                <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
+                                {!collapsed && (
+                                    <span className="grid">
+                                        <span>{item.label}</span>
+                                        <span className="text-muted-foreground text-xs">
+                                            {item.hint}
+                                        </span>
+                                    </span>
                                 )}
                             </NavLink>
                         )
