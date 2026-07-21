@@ -46,7 +46,7 @@ export async function addNote(page: Page, title: string, body = ''): Promise<voi
     await page.getByRole('button', { name: 'New note' }).click()
     await page.getByLabel('Title').fill(title)
     if (body) await page.getByLabel('Body').fill(body)
-    await page.getByRole('button', { name: 'Save note' }).click()
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(page.getByText(title, { exact: true })).toBeVisible()
 }
 

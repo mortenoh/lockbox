@@ -120,9 +120,14 @@ export function NoteComposer({ owner, ownerId, editing = null, onSaved }: NoteCo
 
             <div className="grid gap-2">
                 <div className="flex items-center gap-3">
-                    <Label htmlFor="note-body">Body</Label>
-                    {/* Segmented control, left with the label it belongs to -
-                        not buttons floating at the far edge of the dialog. */}
+                    {/* sr-only: the dialog is about a note, so a visible "Body"
+                        label is form-speak - but the textarea still needs an
+                        accessible name. */}
+                    <Label htmlFor="note-body" className="sr-only">
+                        Body
+                    </Label>
+                    {/* Segmented control, left-aligned - not buttons floating
+                        at the far edge of the dialog. */}
                     <div className="border-border inline-flex overflow-hidden rounded-lg border">
                         <button
                             type="button"
@@ -169,12 +174,12 @@ export function NoteComposer({ owner, ownerId, editing = null, onSaved }: NoteCo
                 )}
             </div>
 
-            {/* "Save note", not "Encrypt and save": encryption is not a choice
-                the user is making, it is what saving *is* here. The lock icon
-                and the At Rest page carry that story. */}
+            {/* "Save", not "Encrypt and save" or "Save note": encryption is
+                what saving *is* here, and the dialog is already about a note.
+                The lock icon and the At Rest page carry the crypto story. */}
             <Button type="submit" disabled={busy}>
                 <LockKeyhole className="size-4" />
-                Save note
+                Save
             </Button>
         </form>
     )

@@ -119,8 +119,23 @@ function NoteCard({ note, owner, onEdit, onDelete }: NoteCardProps) {
                 // foreground darkens the white card in light mode and lifts
                 // the dark card in dark mode.
                 'transition-all duration-150 hover:bg-[color-mix(in_oklch,var(--card),var(--foreground)_3%)] hover:shadow-md hover:ring-primary/35',
+                !unreadable && 'cursor-pointer',
                 unreadable && 'border-destructive/40',
             )}
+            onClick={
+                unreadable
+                    ? undefined
+                    : (event) => {
+                          // The card is one big edit target, but not at the
+                          // cost of its smaller ones: buttons keep their own
+                          // actions, links in the markdown stay links, and
+                          // selecting text to copy it must not open a dialog.
+                          const target = event.target as HTMLElement
+                          if (target.closest('button, a')) return
+                          if (window.getSelection()?.toString()) return
+                          onEdit(note)
+                      }
+            }
         >
             <CardContent className="grid gap-3">
                 <div className="flex items-start gap-3">
