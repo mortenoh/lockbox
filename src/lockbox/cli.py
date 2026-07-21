@@ -75,8 +75,8 @@ def _seed_demo_notes(data_file: Path) -> None:
                 title=title,
                 body=body,
                 author="Ward 3 Clinic",
-                created_at=now,
-                updated_at=now,
+                createdAt=now,
+                updatedAt=now,
             )
         )
     typer.echo(f"Seeded {len(DEMO_NOTES)} Markdown demo notes into {plain_file}")
