@@ -16,6 +16,11 @@ PORT ?= 8000
 # publishing to the internet defaults to requiring a token.
 AUTH ?= none
 
+# DEMO=1 seeds Markdown example notes into an empty store on startup.
+# A store that already has notes is never touched.
+DEMO ?=
+DEMO_FLAG = $(if $(DEMO),--demo,)
+
 # ==============================================================================
 # Targets
 # ==============================================================================
@@ -43,7 +48,7 @@ help:
 	@echo ""
 	@echo "  serve and funnel are alternatives, not layers - funnel does not"
 	@echo "  need serve first, and either one replaces the other."
-	@echo "  Set PORT=8321 or AUTH=none|token on any of the above."
+	@echo "  Set PORT=8321, AUTH=none|token or DEMO=1 on any of the above."
 	@echo ""
 	@echo "  docs-serve   Serve documentation locally with live reload"
 	@echo "  docs-build   Build documentation site"
@@ -52,34 +57,34 @@ help:
 
 install:
 	@echo ">>> Installing dependencies"
-	@$(UV) sync --all-groups
+	$(UV) sync --all-groups
 
 lint:
 	@echo ">>> Running formatter and linter"
-	@$(UV) run ruff format .
-	@$(UV) run ruff check . --fix
+	$(UV) run ruff format .
+	$(UV) run ruff check . --fix
 	@echo ">>> Running type checkers"
-	@$(UV) run python -m mypy --explicit-package-bases src tests
-	@$(UV) run python -m pyright
+	$(UV) run python -m mypy --explicit-package-bases src tests
+	$(UV) run python -m pyright
 
 test:
 	@echo ">>> Running tests"
-	@$(UV) run python -m pytest -q
+	$(UV) run python -m pytest -q
 
 # Starts its own server on a throwaway data file, so it never touches ./data.
 test-e2e:
 	@echo ">>> Running end-to-end tests"
-	@cd frontend && pnpm exec playwright test
+	cd frontend && pnpm exec playwright test
 
 coverage:
 	@echo ">>> Running tests with coverage"
-	@$(UV) run python -m coverage run -m pytest -q
-	@$(UV) run python -m coverage report
-	@$(UV) run python -m coverage xml
+	$(UV) run python -m coverage run -m pytest -q
+	$(UV) run python -m coverage report
+	$(UV) run python -m coverage xml
 
 serve:
 	@echo ">>> Serving on http://127.0.0.1:$(PORT)"
-	@$(UV) run lockbox serve --port $(PORT) --auth $(AUTH) --reload
+	$(UV) run lockbox serve --port $(PORT) --auth $(AUTH) $(DEMO_FLAG) --reload
 
 # Prints a freshly generated token on startup.
 serve-token: AUTH = token
@@ -104,7 +109,7 @@ serve-token: serve
 # the foreground - Ctrl-C stops the thing you actually started. The proxy config
 # survives, harmlessly pointing at a closed port, until '*-off' clears it.
 tailscale-serve:
-	@tailscale serve --bg $(PORT) >/dev/null
+	tailscale serve --bg $(PORT) >/dev/null
 	@echo ">>> Shared with your tailnet:"
 	@echo "    $$($(MAKE) -s tailscale-url)"
 	@echo ""
@@ -112,22 +117,22 @@ tailscale-serve:
 	@echo "    authenticates them, so AUTH=none is fine here."
 	@echo "    Stop sharing afterwards with 'make tailscale-serve-off'."
 	@echo ""
-	@$(UV) run lockbox serve --port $(PORT) --auth $(AUTH) --reload
+	$(UV) run lockbox serve --port $(PORT) --auth $(AUTH) $(DEMO_FLAG) --reload
 
 tailscale-url:
-	@tailscale status --json \
+	tailscale status --json \
 	  | $(PYTHON) -c "import json,sys; print('https://' + json.load(sys.stdin)['Self']['DNSName'].rstrip('.'))"
 
 tailscale-serve-off:
 	@echo ">>> Stopping tailnet sharing"
-	@tailscale serve --https=443 off
+	tailscale serve --https=443 off
 
 # Public internet, so this defaults to requiring a token. Override with
 # AUTH=none if you really want an open endpoint - you will be warned, not
 # stopped.
 tailscale-funnel: AUTH = token
 tailscale-funnel:
-	@tailscale funnel --bg $(PORT) >/dev/null
+	tailscale funnel --bg $(PORT) >/dev/null
 	@echo ">>> PUBLIC on the internet:"
 	@echo "    $$($(MAKE) -s tailscale-url)"
 	@echo ""
@@ -139,46 +144,46 @@ tailscale-funnel:
 	fi
 	@echo "    Stop publishing afterwards with 'make tailscale-funnel-off'."
 	@echo ""
-	@$(UV) run lockbox serve --port $(PORT) --auth $(AUTH) --reload
+	$(UV) run lockbox serve --port $(PORT) --auth $(AUTH) $(DEMO_FLAG) --reload
 
 tailscale-funnel-off:
 	@echo ">>> Stopping Funnel"
 	@echo "    Note: this clears any 'tailscale serve' config too - they are"
 	@echo "    the same underlying proxy."
-	@tailscale funnel reset
+	tailscale funnel reset
 
 # The built frontend is committed, so this is only needed after changing
 # anything under frontend/src.
 build-frontend:
 	@echo ">>> Building frontend into src/lockbox/static"
-	@cd frontend && pnpm install --frozen-lockfile && pnpm build
+	cd frontend && pnpm install --frozen-lockfile && pnpm build
 
 lint-frontend:
 	@echo ">>> Linting frontend"
-	@cd frontend && pnpm lint
+	cd frontend && pnpm lint
 
 # NO_MKDOCS_2_WARNING silences the Material for MkDocs promotional banner.
 docs-serve:
 	@echo ">>> Serving documentation at http://127.0.0.1:8001"
-	@NO_MKDOCS_2_WARNING=1 $(UV) run mkdocs serve --dev-addr 127.0.0.1:8001
+	NO_MKDOCS_2_WARNING=1 $(UV) run mkdocs serve --dev-addr 127.0.0.1:8001
 
 docs-build:
 	@echo ">>> Building documentation site"
-	@NO_MKDOCS_2_WARNING=1 $(UV) run mkdocs build
+	NO_MKDOCS_2_WARNING=1 $(UV) run mkdocs build
 
 docs: docs-serve
 
 clean:
 	@echo ">>> Cleaning up"
-	@find . -type f -name "*.pyc" -delete
-	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	@find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
-	@find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
-	@find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
-	@rm -rf .coverage htmlcov coverage.xml
-	@rm -rf .pyright
-	@rm -rf dist build *.egg-info
-	@rm -rf site
+	find . -type f -name "*.pyc" -delete
+	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
+	rm -rf .coverage htmlcov coverage.xml
+	rm -rf .pyright
+	rm -rf dist build *.egg-info
+	rm -rf site
 
 # ==============================================================================
 # Default
