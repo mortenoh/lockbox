@@ -20,7 +20,11 @@ createRoot(document.getElementById('root')!).render(
     <StrictMode>
         {/* `class` strategy matches the `.dark` variant the stylesheet defines. */}
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-            <TooltipProvider delayDuration={200}>
+            {/* Slow enough that tooltips are an answer you wait for, not
+                noise that chases the pointer. Once one is open, moving to a
+                neighbouring control still shows its tip immediately (radix
+                skipDelayDuration default). */}
+            <TooltipProvider delayDuration={2000}>
                 <HashRouter>
                     <App />
                 </HashRouter>
@@ -32,7 +36,12 @@ createRoot(document.getElementById('root')!).render(
 
 // Registered after load so it never competes with the first paint. Failure is
 // not fatal - the app still works, it just will not load offline.
-if ('serviceWorker' in navigator) {
+//
+// PROD only: under the vite dev server the worker's cached shell references
+// /assets/* bundle paths that vite does not serve, so its stale-shell
+// self-heal clears caches and reloads in a loop. The worker is exercised for
+// real by the e2e suite, which runs against the built bundle.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     // A worker that was already controlling this page means any handover is a
     // genuine update rather than the first install. Captured before registering,
     // because registration can change it.

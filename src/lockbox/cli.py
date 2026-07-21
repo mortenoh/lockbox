@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+import uuid
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -27,6 +29,59 @@ app = typer.Typer(
 )
 
 
+DEMO_NOTES: list[tuple[str, str]] = [
+    (
+        "Cold chain check, morning round",
+        "**Fridge 2** at `5.1 C` on arrival, back inside range by 09:40.\n\n"
+        "- Logged on the paper sheet as well\n"
+        "- Compressor noise again - *flagged for maintenance*\n\n"
+        "> Target range is 2-8 C. Anything outside for over an hour gets reported.",
+    ),
+    (
+        "Stock count discrepancies",
+        "Recount planned with Fatima tomorrow before reporting.\n\n"
+        "| Item | Card | Shelf |\n|---|---|---|\n"
+        "| Amoxicillin 250mg | 340 | **322** |\n| ORS sachets | 120 | **105** |\n\n"
+        "1. Recount both shelves\n2. Check the transfer log\n3. Report if still short",
+    ),
+    (
+        "Follow-up: outreach visit Thursday",
+        "Two **missed vaccination appointments** in the border villages.\n\n"
+        "- Driver confirmed for `07:00`\n- Bring extra registers\n"
+        "- Check road conditions after the rain",
+    ),
+]
+
+
+def _seed_demo_notes(data_file: Path) -> None:
+    """Fill an empty plaintext store with Markdown demo notes.
+
+    Only the plaintext store: encrypted notes cannot be fabricated server-side,
+    since only a client holding a key can produce valid ciphertext. Refuses to
+    touch a store that already has notes, so re-running with --demo never
+    clobbers real data.
+    """
+    plain_file = data_file.with_suffix(".plain" + data_file.suffix)
+    store = RecordStore(plain_file, PlainNote)
+    if store.count() > 0:
+        typer.echo("Demo notes skipped: plaintext store already has notes")
+        return
+
+    now = int(time.time() * 1000)
+    for title, body in DEMO_NOTES:
+        store.put(
+            PlainNote(
+                id=str(uuid.uuid4()),
+                title=title,
+                body=body,
+                author="Ward 3 Clinic",
+                createdAt=now,
+                updatedAt=now,
+            )
+        )
+    typer.echo(f"Seeded {len(DEMO_NOTES)} Markdown demo notes into {plain_file}")
+
+
 @app.command()
 def serve(
     host: Annotated[str, typer.Option(help="Bind address.")] = "127.0.0.1",
@@ -35,6 +90,7 @@ def serve(
     auth: Annotated[str, typer.Option(help="Auth mode: 'none' (local only) or 'token' (shared bearer).")] = "none",
     token: Annotated[str | None, typer.Option(help="Token to require. Generated if omitted in token mode.")] = None,
     reload: Annotated[bool, typer.Option(help="Auto-reload on source changes.")] = False,
+    demo: Annotated[bool, typer.Option("--demo", help="Seed Markdown demo notes if the store is empty.")] = False,
 ) -> None:
     """Run the demo server.
 
@@ -44,6 +100,9 @@ def serve(
     if auth not in {"none", "token"}:
         typer.echo("--auth must be 'none' or 'token'", err=True)
         raise typer.Exit(code=2)
+
+    if demo:
+        _seed_demo_notes(data_file)
 
     resolved: str | None = None
     if auth == "token":
